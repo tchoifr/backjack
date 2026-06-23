@@ -135,20 +135,6 @@
             Ajoute les cartes de la table. La premiere carte du croupier sert de carte visible.
           </div>
 
-          <div class="betting-panel">
-            <div class="betting-summary">
-              <span>Phase de mise</span>
-              <strong id="roundBetSummary">Mise par main: 10</strong>
-              <small id="roundBetDetail">Total table: 10</small>
-            </div>
-            <div class="betting-actions">
-              <button type="button" id="dealButton" class="button primary">Distribuer</button>
-              <button type="button" id="doubleBetsButton" class="button secondary">Doubler mises</button>
-              <button type="button" id="clearBetsButton" class="button secondary">Retirer mises</button>
-              <button type="button" id="undoBetButton" class="button secondary" disabled>Retour mise</button>
-            </div>
-          </div>
-
           <div class="round-flow">
             <h3>Deroulement</h3>
             <ol id="roundSteps"></ol>
@@ -220,35 +206,6 @@
           <div class="rank-grid" id="rankGrid" aria-label="Ajouter une carte"></div>
         </section>
 
-        <section class="panel image-panel">
-          <div class="panel-heading split">
-            <div>
-              <h2>Photo des cartes</h2>
-            </div>
-            <label class="file-button">
-              <input id="photoInput" type="file" accept="image/*">
-              Choisir une image
-            </label>
-          </div>
-
-          <div class="photo-layout">
-            <div class="canvas-wrap">
-              <canvas id="photoCanvas" width="960" height="540" aria-label="Apercu de la photo"></canvas>
-            </div>
-
-            <div class="detection-panel">
-              <div class="detector-actions">
-                <button type="button" id="analyzeButton" class="button primary" disabled>Detecter</button>
-                <button type="button" id="addDetectedButton" class="button secondary" disabled>Ajouter au compteur</button>
-              </div>
-              <div class="detection-summary" id="detectionSummary">
-                Aucune image chargee.
-              </div>
-              <button type="button" id="addMissingButton" class="button secondary wide" disabled>Carte manquante</button>
-              <div class="detection-list" id="detectionList"></div>
-            </div>
-          </div>
-        </section>
       </section>
     </main>
 

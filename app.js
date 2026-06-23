@@ -93,7 +93,7 @@ const elements = {
   photoCanvas: document.querySelector("#photoCanvas"),
 };
 
-const photoContext = elements.photoCanvas.getContext("2d", { willReadFrequently: true });
+const photoContext = elements.photoCanvas?.getContext("2d", { willReadFrequently: true }) || null;
 let rankTemplates = null;
 
 function createDefaultRules() {
@@ -375,7 +375,10 @@ function handleRankGridClick(rank) {
 
   const playerTarget = parsePlayerQuickTarget(target);
   if (playerTarget && addRankToPlayerHand(playerTarget.playerIndex, playerTarget.handIndex, rank, { countIt: true })) {
-    setTableStatus(`${rank} ajoutee a ${getQuickTargetLabel(target)} et au compteur.`);
+    const nextTarget = getActiveQuickTarget();
+    const nextMessage =
+      nextTarget !== target && nextTarget !== "counter" ? ` Prochaine carte: ${getQuickTargetLabel(nextTarget)}.` : "";
+    setTableStatus(`${rank} ajoutee a ${getQuickTargetLabel(target)} et au compteur.${nextMessage}`);
     return;
   }
 
@@ -1006,6 +1009,20 @@ function getQuickTargetLabel(target = getActiveQuickTarget()) {
   return getQuickTargets().find((option) => option.value === target)?.label || "Compteur seul";
 }
 
+function findNextSplitHandNeedingCard(playerIndex, currentHandIndex) {
+  const player = state.table.players[playerIndex];
+  if (!player) return null;
+
+  const needsCard = (hand) => hand.fromSplit && hand.status === "playing" && hand.cards.length === 1;
+  const indexes = [
+    ...player.hands.map((_, index) => index).filter((index) => index > currentHandIndex),
+    ...player.hands.map((_, index) => index).filter((index) => index < currentHandIndex),
+  ];
+  const nextIndex = indexes.find((index) => needsCard(player.hands[index]));
+
+  return Number.isInteger(nextIndex) ? targetForPlayerHand(playerIndex, nextIndex) : null;
+}
+
 function renderQuickTargetControls() {
   const activeTarget = getActiveQuickTarget();
   elements.quickTargetSelect.replaceChildren();
@@ -1301,6 +1318,9 @@ function addRankToPlayerHand(playerIndex, handIndex, rank, options = {}) {
   if (info.bust) hand.status = "bust";
   if (info.blackjack) hand.status = "blackjack";
 
+  const nextSplitTarget = findNextSplitHandNeedingCard(playerIndex, handIndex);
+  if (nextSplitTarget) state.quickTarget = nextSplitTarget;
+
   if (options.countIt) {
     markTableCardCounted(rank);
     addCountEntry(rank, "table");
@@ -1388,9 +1408,13 @@ function splitHand(playerIndex, handIndex) {
   firstHand.actionLog.push("Split");
   secondHand.actionLog.push("Split");
   player.hands.splice(handIndex, 1, firstHand, secondHand);
+  state.quickTarget = targetForPlayerHand(playerIndex, handIndex);
 
   saveState();
   renderApp();
+  setTableStatus(
+    `Split fait: ajoute une carte a ${getQuickTargetLabel()}, puis l'app passera a l'autre main.`
+  );
 }
 
 function renderTable() {
@@ -1415,6 +1439,8 @@ function renderTable() {
 }
 
 function renderBettingPanel() {
+  if (!elements.roundBetSummary) return;
+
   const locked = isBettingLocked();
   const total = getRoundBetTotal();
 
@@ -1503,7 +1529,6 @@ function formatDateTime(value) {
 }
 
 function renderRoundSteps() {
-  const dealt = state.table.roundStarted;
   const hasDealer = Boolean(state.table.dealerCards[0]);
   const allInitialHandsReady = state.table.players.every((player) =>
     player.hands.every((hand) => hand.cards.length >= 2 || hand.status !== "playing")
@@ -1516,22 +1541,21 @@ function renderRoundSteps() {
   const dealerDone = allHandsDone && (noLiveHands || ["dealer-stand", "done"].includes(dealerDecision.code));
 
   const steps = [
-    { text: "Placer les mises puis appuyer sur DISTRIBUER.", done: dealt, active: !dealt },
-    { text: "Entrer la carte visible du croupier.", done: hasDealer, active: dealt && !hasDealer },
-    { text: "Entrer les cartes de chaque joueur.", done: allInitialHandsReady, active: dealt && hasDealer && !allInitialHandsReady },
+    { text: "Entrer la carte visible du croupier.", done: hasDealer, active: !hasDealer },
+    { text: "Entrer les cartes de chaque joueur.", done: allInitialHandsReady, active: hasDealer && !allInitialHandsReady },
     {
       text: activeHand
         ? `Jouer Joueur ${activeHand.player.number}, main ${activeHand.handIndex + 1}.`
         : "Choisir tirer / rester / doubler / split / abandon.",
       done: allHandsDone,
-      active: dealt && hasDealer && allInitialHandsReady && Boolean(activeHand),
+      active: hasDealer && allInitialHandsReady && Boolean(activeHand),
     },
     {
       text: dealerMustDraw
         ? `Croupier: ${dealerDecision.action}. Ajoute la carte sortie.`
         : "Entrer les cartes finales du croupier puis compter les visibles.",
       done: dealerDone || noLiveHands,
-      active: dealt && allHandsDone && !dealerDone && !noLiveHands,
+      active: allHandsDone && !dealerDone && !noLiveHands,
     },
   ];
 
@@ -1560,10 +1584,12 @@ function findActiveHand() {
   return null;
 }
 
-function renderCardChips(container, cards, onRemove) {
+function renderCardChips(container, cards, onRemove, options = {}) {
   container.replaceChildren();
 
   if (!cards.length) {
+    if (options.showEmpty === false) return;
+
     const empty = document.createElement("span");
     empty.className = "empty-cards";
     empty.textContent = "Aucune carte";
@@ -1604,10 +1630,9 @@ function renderPlayers() {
 
       const titleWrap = document.createElement("div");
       const label = document.createElement("span");
-      label.textContent = handIndex === 0 ? `Joueur ${player.number}` : `Joueur ${player.number} - main ${handIndex + 1}`;
-      const summary = document.createElement("strong");
-      summary.textContent = `${formatHandSummary(hand.cards)} - mise ${hand.betAmount * hand.betMultiplier}`;
-      titleWrap.append(label, summary);
+      label.textContent =
+        player.hands.length === 1 ? `Joueur ${player.number}` : `Joueur ${player.number} - main ${handIndex + 1}`;
+      titleWrap.append(label);
 
       const selectButton = document.createElement("button");
       selectButton.type = "button";
@@ -1638,7 +1663,9 @@ function renderPlayers() {
 
       const chips = document.createElement("div");
       chips.className = "card-chip-row";
-      renderCardChips(chips, hand.cards, (cardIndex) => removePlayerCard(playerIndex, handIndex, cardIndex));
+      renderCardChips(chips, hand.cards, (cardIndex) => removePlayerCard(playerIndex, handIndex, cardIndex), {
+        showEmpty: false,
+      });
 
       const choices = document.createElement("div");
       choices.className = "choice-row";
@@ -1692,6 +1719,8 @@ function renderApp() {
 }
 
 function drawPlaceholder() {
+  if (!elements.photoCanvas || !photoContext) return;
+
   elements.photoCanvas.width = 640;
   elements.photoCanvas.height = 420;
   photoContext.clearRect(0, 0, elements.photoCanvas.width, elements.photoCanvas.height);
@@ -1705,6 +1734,8 @@ function drawPlaceholder() {
 }
 
 function drawPhoto() {
+  if (!elements.photoCanvas || !photoContext) return;
+
   if (!state.photoLoaded || !state.photoImage) {
     drawPlaceholder();
     return;
@@ -1715,11 +1746,15 @@ function drawPhoto() {
 }
 
 function drawRawPhoto() {
+  if (!elements.photoCanvas || !photoContext) return;
+
   photoContext.clearRect(0, 0, elements.photoCanvas.width, elements.photoCanvas.height);
   photoContext.drawImage(state.photoImage, 0, 0, elements.photoCanvas.width, elements.photoCanvas.height);
 }
 
 function drawDetections() {
+  if (!elements.photoCanvas || !photoContext) return;
+
   state.detections.forEach((detection, index) => {
     const { x, y, width, height } = detection.box;
     photoContext.save();
@@ -1743,7 +1778,7 @@ function drawDetections() {
 }
 
 function loadPhoto(file) {
-  if (!file) return;
+  if (!file || !elements.photoCanvas) return;
 
   const reader = new FileReader();
   reader.addEventListener("load", () => {
@@ -2653,17 +2688,17 @@ function bindEvents() {
   elements.countTableButton.addEventListener("click", countVisibleTableCards);
   elements.clearTableButton.addEventListener("click", clearTable);
   elements.clearRoundMemoryButton.addEventListener("click", clearRoundMemory);
-  elements.dealButton.addEventListener("click", dealRound);
-  elements.doubleBetsButton.addEventListener("click", doubleTableBets);
-  elements.clearBetsButton.addEventListener("click", clearTableBets);
-  elements.undoBetButton.addEventListener("click", undoTableBet);
+  elements.dealButton?.addEventListener("click", dealRound);
+  elements.doubleBetsButton?.addEventListener("click", doubleTableBets);
+  elements.clearBetsButton?.addEventListener("click", clearTableBets);
+  elements.undoBetButton?.addEventListener("click", undoTableBet);
   elements.selectDealerButton.addEventListener("click", () => setQuickTarget("dealer"));
   elements.addDealerCardButton.addEventListener("click", addDealerCard);
   elements.clearDealerButton.addEventListener("click", clearDealerCards);
-  elements.photoInput.addEventListener("change", (event) => loadPhoto(event.target.files[0]));
-  elements.analyzeButton.addEventListener("click", analyzePhoto);
-  elements.addDetectedButton.addEventListener("click", addDetectedCards);
-  elements.addMissingButton.addEventListener("click", addMissingDetection);
+  elements.photoInput?.addEventListener("change", (event) => loadPhoto(event.target.files[0]));
+  elements.analyzeButton?.addEventListener("click", analyzePhoto);
+  elements.addDetectedButton?.addEventListener("click", addDetectedCards);
+  elements.addMissingButton?.addEventListener("click", addMissingDetection);
 }
 
 loadState();
