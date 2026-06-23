@@ -71,6 +71,22 @@
             <input id="baseBet" type="number" min="1" max="100000" step="1" value="10">
           </label>
 
+          <div class="vpn-box" id="vpnBox">
+            <div class="vpn-heading">
+              <div>
+                <span class="vpn-kicker">VPN</span>
+                <strong id="vpnState">Inactif</strong>
+              </div>
+              <span class="vpn-indicator" aria-hidden="true"></span>
+            </div>
+            <label class="field">
+              <span>Pays</span>
+              <select id="vpnCountrySelect" aria-label="Pays du VPN"></select>
+            </label>
+            <button type="button" id="vpnToggleButton" class="button primary wide" aria-pressed="false">Activer le VPN</button>
+            <small id="vpnStatus" class="vpn-status">Choisis un pays puis active le VPN.</small>
+          </div>
+
           <div class="rules-box">
             <h3>Regles table</h3>
             <label class="field">

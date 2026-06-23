@@ -30,6 +30,7 @@ Puis va sur `http://localhost:8080`.
 - Decision du croupier : tirer jusqu'a 16, rester sur 17 dur, et appliquer S17/H17 sur soft 17.
 - Resultat de fin de manche : gagne, perdu, push, blackjack ou abandon.
 - Reglage du nombre de decks et de la mise de base.
+- Selecteur VPN avec activation pour Argentine, Azerbaidjan, Bresil, Hongrie, Philippines, Pologne, Roumanie, Afrique du Sud et Tanzanie.
 - Historique avec annulation.
 - Import photo avec detection des cartes visibles.
 - Lecture des rangs dans les coins des cartes, meme quand plusieurs cartes se touchent.

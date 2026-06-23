@@ -304,6 +304,61 @@ h3 {
   margin-bottom: 2px;
 }
 
+.vpn-box {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  background: var(--surface-2);
+}
+
+.vpn-heading {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.vpn-kicker {
+  display: block;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0;
+  line-height: 1.35;
+  text-transform: uppercase;
+}
+
+.vpn-status {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.vpn-heading strong {
+  display: block;
+  margin-top: 4px;
+  font-size: 1.18rem;
+}
+
+.vpn-indicator {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: var(--muted);
+}
+
+.vpn-box.active .vpn-indicator {
+  background: var(--accent);
+  box-shadow: 0 0 18px rgba(32, 214, 159, 0.72);
+}
+
+.vpn-box.active {
+  border-color: rgba(32, 214, 159, 0.5);
+}
+
 .check-field {
   display: grid;
   grid-template-columns: 18px 1fr;
@@ -1132,6 +1187,7 @@ h3 {
 .table-history,
 .quick-entry,
 .rules-box,
+.vpn-box,
 .status-box,
 .bet-box,
 .table-status,
@@ -1224,6 +1280,7 @@ h3 {
 .panel-heading p,
 .table-status,
 .quick-target-status,
+.vpn-status,
 .action-note,
 .memory-heading p,
 .round-flow li,
@@ -1381,12 +1438,14 @@ h3 {
 }
 
 .recommendation strong,
+.vpn-heading strong,
 .status-box strong,
 .bet-box strong {
   color: #ffffff;
 }
 
 .recommendation.positive,
+.vpn-box.active,
 .status-box.positive {
   border-color: rgba(32, 214, 159, 0.42);
   background: rgba(32, 214, 159, 0.11);

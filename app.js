@@ -18,10 +18,22 @@ const STORAGE_KEY = "blackjack-counter-v1";
 const TEMPLATE_WIDTH = 28;
 const TEMPLATE_HEIGHT = 36;
 const RANK_CONFIDENCE_THRESHOLD = 0.44;
+const VPN_COUNTRIES = [
+  { value: "argentine", label: "Argentine" },
+  { value: "azerbaidjan", label: "Azerbaidjan" },
+  { value: "bresil", label: "Bresil" },
+  { value: "hongrie", label: "Hongrie" },
+  { value: "philippines", label: "Philippines" },
+  { value: "pologne", label: "Pologne" },
+  { value: "roumanie", label: "Roumanie" },
+  { value: "afrique-du-sud", label: "Afrique du Sud" },
+  { value: "tanzanie", label: "Tanzanie" },
+];
 
 const state = {
   deckCount: 6,
   baseBet: 10,
+  vpn: createDefaultVpnState(),
   rules: createDefaultRules(),
   history: [],
   roundHistory: [],
@@ -46,6 +58,11 @@ const elements = {
   resultReason: document.querySelector("#resultReason"),
   deckCount: document.querySelector("#deckCount"),
   baseBet: document.querySelector("#baseBet"),
+  vpnBox: document.querySelector("#vpnBox"),
+  vpnCountrySelect: document.querySelector("#vpnCountrySelect"),
+  vpnToggleButton: document.querySelector("#vpnToggleButton"),
+  vpnState: document.querySelector("#vpnState"),
+  vpnStatus: document.querySelector("#vpnStatus"),
   dealerSoft17Rule: document.querySelector("#dealerSoft17Rule"),
   surrenderAllowed: document.querySelector("#surrenderAllowed"),
   doubleAfterSplitAllowed: document.querySelector("#doubleAfterSplitAllowed"),
@@ -95,6 +112,13 @@ const elements = {
 
 const photoContext = elements.photoCanvas?.getContext("2d", { willReadFrequently: true }) || null;
 let rankTemplates = null;
+
+function createDefaultVpnState() {
+  return {
+    enabled: false,
+    country: VPN_COUNTRIES[0].value,
+  };
+}
 
 function createDefaultRules() {
   return {
@@ -166,6 +190,7 @@ function loadState() {
     const saved = JSON.parse(raw);
     if (Number.isFinite(saved.deckCount)) state.deckCount = saved.deckCount;
     if (Number.isFinite(saved.baseBet)) state.baseBet = saved.baseBet;
+    if (saved.vpn) state.vpn = normalizeVpnState(saved.vpn);
     if (saved.rules) state.rules = normalizeRules(saved.rules);
     if (Array.isArray(saved.history)) {
       state.history = saved.history.filter((entry) => RANKS.includes(entry.rank));
@@ -191,6 +216,7 @@ function saveState() {
       JSON.stringify({
         deckCount: state.deckCount,
         baseBet: state.baseBet,
+        vpn: state.vpn,
         rules: state.rules,
         history: state.history,
         roundHistory: state.roundHistory,
@@ -201,6 +227,24 @@ function saveState() {
   } catch (error) {
     console.warn("Impossible de sauvegarder le compteur.", error);
   }
+}
+
+function normalizeVpnState(vpn) {
+  const defaults = createDefaultVpnState();
+  const country = getVpnCountry(vpn.country)?.value || defaults.country;
+
+  return {
+    enabled: Boolean(vpn.enabled),
+    country,
+  };
+}
+
+function getVpnCountry(value) {
+  return VPN_COUNTRIES.find((country) => country.value === value);
+}
+
+function getVpnCountryLabel(value = state.vpn.country) {
+  return getVpnCountry(value)?.label || VPN_COUNTRIES[0].label;
 }
 
 function normalizeRules(rules) {
@@ -585,6 +629,38 @@ function getActionRecommendation(stats) {
 
 function renderBetSuggestion(stats) {
   elements.betSuggestion.textContent = `${getBetAmount(stats)}`;
+}
+
+function fillVpnCountrySelect() {
+  elements.vpnCountrySelect.replaceChildren();
+  VPN_COUNTRIES.forEach((country) => appendOption(elements.vpnCountrySelect, country.value, country.label));
+}
+
+function renderVpnControls() {
+  const countryLabel = getVpnCountryLabel();
+  elements.vpnBox.classList.toggle("active", state.vpn.enabled);
+  elements.vpnCountrySelect.value = state.vpn.country;
+  elements.vpnToggleButton.textContent = state.vpn.enabled ? "Desactiver le VPN" : "Activer le VPN";
+  elements.vpnToggleButton.setAttribute("aria-pressed", `${state.vpn.enabled}`);
+  elements.vpnState.textContent = state.vpn.enabled ? "Actif" : "Inactif";
+  elements.vpnStatus.textContent = state.vpn.enabled
+    ? `Profil VPN actif: ${countryLabel}.`
+    : `VPN inactif. Pays pret: ${countryLabel}.`;
+}
+
+function setVpnCountry(value) {
+  const country = getVpnCountry(value);
+  if (!country) return;
+
+  state.vpn.country = country.value;
+  saveState();
+  renderApp();
+}
+
+function toggleVpn() {
+  state.vpn.enabled = !state.vpn.enabled;
+  saveState();
+  renderApp();
 }
 
 function renderRulesControls() {
@@ -1709,6 +1785,7 @@ function renderApp() {
   elements.baseBet.value = `${state.baseBet}`;
   elements.undoButton.disabled = state.history.length === 0;
 
+  renderVpnControls();
   renderRulesControls();
   renderEdgeStatus(stats);
   renderBetSuggestion(stats);
@@ -2664,6 +2741,9 @@ function bindEvents() {
     renderApp();
   });
 
+  elements.vpnCountrySelect.addEventListener("change", () => setVpnCountry(elements.vpnCountrySelect.value));
+  elements.vpnToggleButton.addEventListener("click", toggleVpn);
+
   elements.dealerSoft17Rule.addEventListener("change", () => {
     updateRule("dealerHitsSoft17", elements.dealerSoft17Rule.value === "hit");
   });
@@ -2703,6 +2783,7 @@ function bindEvents() {
 
 loadState();
 bindEvents();
+fillVpnCountrySelect();
 fillRankSelect(elements.dealerCardSelect, "Carte croupier");
 renderRankGrid();
 renderApp();
