@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Compteur blackjack</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Entrainement blackjack</p>
+          <h1>Compteur Hi-Lo</h1>
+        </div>
+        <div class="summary-grid" aria-live="polite">
+          <div class="metric">
+            <span>Running count</span>
+            <strong id="runningCount">0</strong>
+          </div>
+          <div class="metric">
+            <span>True count</span>
+            <strong id="trueCount">0.0</strong>
+          </div>
+          <div class="metric">
+            <span>Cartes vues</span>
+            <strong id="seenCount">0</strong>
+          </div>
+          <div class="metric">
+            <span>Decks restants</span>
+            <strong id="decksRemaining">6.0</strong>
+          </div>
+        </div>
+      </header>
+
+      <section class="result-panel" id="resultPanel" aria-live="polite">
+        <div class="result-main">
+          <span>Resultat maintenant</span>
+          <strong id="resultTitle">Neutre - mise de base</strong>
+          <p id="resultAction">Mise 10. Continue a compter.</p>
+        </div>
+        <div class="result-grid">
+          <div>
+            <span>Action de mise</span>
+            <strong id="resultBet">Mise de base</strong>
+          </div>
+          <div>
+            <span>Action de jeu</span>
+            <strong id="resultPlay">Strategie normale</strong>
+          </div>
+          <div>
+            <span>Pourquoi</span>
+            <strong id="resultReason">True count proche de 0</strong>
+          </div>
+        </div>
+      </section>
+
+      <section class="workspace" aria-label="Compteur blackjack">
+        <aside class="panel settings-panel">
+          <div class="panel-heading">
+            <h2>Reglages</h2>
+          </div>
+
+          <label class="field">
+            <span>Nombre de decks</span>
+            <input id="deckCount" type="number" min="1" max="12" step="1" value="6">
+          </label>
+
+          <label class="field">
+            <span>Mise de base</span>
+            <input id="baseBet" type="number" min="1" max="100000" step="1" value="10">
+          </label>
+
+          <div class="rules-box">
+            <h3>Regles table</h3>
+            <label class="field">
+              <span>Croupier soft 17</span>
+              <select id="dealerSoft17Rule">
+                <option value="stand">Reste sur soft 17</option>
+                <option value="hit">Tire sur soft 17</option>
+              </select>
+            </label>
+            <label class="check-field">
+              <input id="surrenderAllowed" type="checkbox" checked>
+              <span>Abandon autorise</span>
+            </label>
+            <label class="check-field">
+              <input id="doubleAfterSplitAllowed" type="checkbox" checked>
+              <span>Doubler apres split</span>
+            </label>
+            <label class="check-field">
+              <input id="insuranceAllowed" type="checkbox" checked>
+              <span>Assurance proposee</span>
+            </label>
+            <label class="check-field">
+              <input id="splitAcesOneCard" type="checkbox" checked>
+              <span>As split: une carte</span>
+            </label>
+          </div>
+
+          <div class="status-box" id="edgeStatus">
+            <span>Avantage</span>
+            <strong>Neutre</strong>
+            <small>Le sabot vient de commencer.</small>
+          </div>
+
+          <div class="bet-box">
+            <span>Mise conseillee</span>
+            <strong id="betSuggestion">10</strong>
+          </div>
+
+          <div class="button-row">
+            <button type="button" id="undoButton" class="button secondary" disabled>Annuler</button>
+            <button type="button" id="resetButton" class="button danger">Nouveau sabot</button>
+          </div>
+        </aside>
+
+        <section class="panel table-panel">
+          <div class="panel-heading split">
+            <div>
+              <h2>Table en cours</h2>
+              <p>Entre la carte visible du croupier et les mains des joueurs pour obtenir les actions.</p>
+            </div>
+            <div class="table-actions">
+              <label class="field compact">
+                <span>Joueurs</span>
+                <input id="playerCount" type="number" min="1" max="7" step="1" value="1">
+              </label>
+              <button type="button" id="countTableButton" class="button primary" disabled>Compter cartes visibles</button>
+              <button type="button" id="clearTableButton" class="button secondary">Nouvelle manche</button>
+            </div>
+          </div>
+
+          <div class="table-status" id="tableStatus">
+            Ajoute les cartes de la table. La premiere carte du croupier sert de carte visible.
+          </div>
+
+          <div class="betting-panel">
+            <div class="betting-summary">
+              <span>Phase de mise</span>
+              <strong id="roundBetSummary">Mise par main: 10</strong>
+              <small id="roundBetDetail">Total table: 10</small>
+            </div>
+            <div class="betting-actions">
+              <button type="button" id="dealButton" class="button primary">Distribuer</button>
+              <button type="button" id="doubleBetsButton" class="button secondary">Doubler mises</button>
+              <button type="button" id="clearBetsButton" class="button secondary">Retirer mises</button>
+              <button type="button" id="undoBetButton" class="button secondary" disabled>Retour mise</button>
+            </div>
+          </div>
+
+          <div class="round-flow">
+            <h3>Deroulement</h3>
+            <ol id="roundSteps"></ol>
+          </div>
+
+          <div class="history-wrap table-history">
+            <div class="history-heading">
+              <h3>Historique</h3>
+              <button type="button" id="clearHistoryButton" class="text-button">Vider</button>
+            </div>
+            <ol class="history-list" id="historyList"></ol>
+          </div>
+
+          <section class="memory-panel" aria-label="Memoire des parties">
+            <div class="memory-heading">
+              <div>
+                <h3>Memoire des parties</h3>
+                <p id="memorySummary">Aucune partie memorisee.</p>
+              </div>
+              <button type="button" id="clearRoundMemoryButton" class="button secondary">Vider memoire</button>
+            </div>
+            <div class="passed-cards" id="passedCardsSummary"></div>
+            <ol class="round-memory-list" id="roundMemoryList"></ol>
+          </section>
+
+          <div class="hands-layout">
+            <section class="hand-card dealer-hand" aria-label="Main du croupier">
+              <div class="hand-header">
+                <div>
+                  <span>Croupier</span>
+                  <strong id="dealerSummary">Aucune carte</strong>
+                </div>
+                <button type="button" id="selectDealerButton" class="button secondary mini select-hand-button">Selectionner</button>
+                <div class="recommendation" id="dealerRecommendation">
+                  <span>Regle croupier</span>
+                  <strong>Entrer cartes</strong>
+                </div>
+              </div>
+              <div class="card-chip-row" id="dealerCards"></div>
+              <div class="add-card-row">
+                <select id="dealerCardSelect" aria-label="Ajouter une carte au croupier"></select>
+                <button type="button" id="addDealerCardButton" class="button secondary">Ajouter</button>
+                <button type="button" id="clearDealerButton" class="button secondary">Vider</button>
+              </div>
+            </section>
+
+            <section class="players-wrap" id="playersContainer" aria-label="Mains des joueurs"></section>
+          </div>
+        </section>
+
+        <section class="panel manual-panel">
+          <div class="panel-heading split">
+            <div>
+              <h2>Saisie des cartes</h2>
+            </div>
+            <div class="rules-pill">Hi-Lo: 2-6 +1 / 7-9 0 / 10-A -1</div>
+          </div>
+
+          <div class="quick-entry">
+            <label class="field">
+              <span>Destination des cartes du bas</span>
+              <select id="quickTargetSelect" aria-label="Destination des cartes rapides"></select>
+            </label>
+            <div class="quick-target-status" id="quickTargetStatus">
+              Compteur seul: les cartes du bas ne remplissent pas la table.
+            </div>
+          </div>
+
+          <div class="rank-grid" id="rankGrid" aria-label="Ajouter une carte"></div>
+        </section>
+
+        <section class="panel image-panel">
+          <div class="panel-heading split">
+            <div>
+              <h2>Photo des cartes</h2>
+            </div>
+            <label class="file-button">
+              <input id="photoInput" type="file" accept="image/*">
+              Choisir une image
+            </label>
+          </div>
+
+          <div class="photo-layout">
+            <div class="canvas-wrap">
+              <canvas id="photoCanvas" width="960" height="540" aria-label="Apercu de la photo"></canvas>
+            </div>
+
+            <div class="detection-panel">
+              <div class="detector-actions">
+                <button type="button" id="analyzeButton" class="button primary" disabled>Detecter</button>
+                <button type="button" id="addDetectedButton" class="button secondary" disabled>Ajouter au compteur</button>
+              </div>
+              <div class="detection-summary" id="detectionSummary">
+                Aucune image chargee.
+              </div>
+              <button type="button" id="addMissingButton" class="button secondary wide" disabled>Carte manquante</button>
+              <div class="detection-list" id="detectionList"></div>
+            </div>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>
