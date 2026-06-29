@@ -77,7 +77,7 @@ const RULE_PROFILES = [
     rules: {
       dealerHitsSoft17: false,
       surrenderAllowed: false,
-      doubleAfterSplitAllowed: true,
+      doubleAfterSplitAllowed: false,
       insuranceAllowed: true,
       splitAcesOneCard: true,
       resplitAllowed: false,
@@ -914,17 +914,26 @@ function applyRuleProfile(value) {
 
 function renderActionRecommendation(stats) {
   if (isCalculationOnlyMode()) {
-    const aceDecision = getDealerAceInsuranceDecision(getPrimaryPlayerHand(), stats);
+    const primaryHand = getPrimaryPlayerHand();
+    const aceDecision = getDealerAceInsuranceDecision(primaryHand, stats);
+    const playAdvice = primaryHand ? getRuleAdjustedRecommendation(primaryHand) : null;
+    const hasPlayerCards = Boolean(primaryHand?.cards.length);
 
     elements.resultPanel.className = "result-panel";
-    elements.resultTitle.textContent = aceDecision ? `Croupier As - ${aceDecision.action}` : "Mode calcul seul";
-    elements.resultAction.textContent = aceDecision
+    elements.resultTitle.textContent = hasPlayerCards && playAdvice
+      ? `Joueur 1 - ${playAdvice.action}`
+      : aceDecision
+      ? `Croupier As - ${aceDecision.action}`
+      : "Mode calcul seul";
+    elements.resultAction.textContent = hasPlayerCards && playAdvice
+      ? `${playAdvice.reason}${aceDecision ? ` Assurance: ${aceDecision.action}. ${aceDecision.reason}` : ""}`
+      : aceDecision
       ? aceDecision.reason
       : stats.seen
       ? `Running count ${signed(stats.running)}. True count ${formatTrueCount(stats.trueCount)}.`
       : "Entre les cartes visibles pour demarrer le calcul.";
     elements.resultBet.textContent = "Non affichee";
-    elements.resultPlay.textContent = aceDecision ? aceDecision.action : "Non affiche";
+    elements.resultPlay.textContent = hasPlayerCards && playAdvice ? playAdvice.action : aceDecision ? aceDecision.action : "Non affiche";
     elements.resultReason.textContent = "Profil Regle vrai blackjack";
     return;
   }
@@ -2085,6 +2094,7 @@ function renderPlayers() {
     player.hands.forEach((hand, handIndex) => {
       const handTarget = targetForPlayerHand(playerIndex, handIndex);
       const handSelected = activeTarget === handTarget;
+      const showPlayerAdvice = !calculationOnly || playerIndex === 0;
       const handCard = document.createElement("article");
       handCard.className = `hand-card player-hand ${handSelected ? "selected-hand" : ""}`.trim();
 
@@ -2117,12 +2127,12 @@ function renderPlayers() {
 
       const aceDecision = getDealerAceInsuranceDecision(hand, stats);
       const recommendationBox = document.createElement("div");
-      recommendationBox.className = calculationOnly ? "recommendation" : `recommendation ${recommendationInfo.tone}`;
+      recommendationBox.className = showPlayerAdvice ? `recommendation ${recommendationInfo.tone}` : "recommendation";
       const recommendationLabel = document.createElement("span");
-      recommendationLabel.textContent = aceDecision ? "As croupier" : calculationOnly ? "Calcul" : "Conseil";
+      recommendationLabel.textContent = showPlayerAdvice ? "Conseil" : "Calcul";
       const recommendationAction = document.createElement("strong");
-      recommendationAction.textContent = aceDecision
-        ? aceDecision.action
+      recommendationAction.textContent = showPlayerAdvice
+        ? recommendationInfo.action
         : calculationOnly
         ? formatHandSummary(hand.cards)
         : recommendationInfo.action;
@@ -2138,7 +2148,7 @@ function renderPlayers() {
 
       const choices = document.createElement("div");
       choices.className = "choice-row";
-      if (!calculationOnly) {
+      if (showPlayerAdvice) {
         getAllowedActions(hand).forEach((action) => {
           const button = document.createElement("button");
           button.type = "button";
@@ -2154,8 +2164,10 @@ function renderPlayers() {
       const note = document.createElement("p");
       note.className = "action-note";
       const outcome = getHandOutcome(hand);
-      note.textContent = aceDecision
-        ? aceDecision.reason
+      note.textContent = showPlayerAdvice
+        ? `${recommendationInfo.reason}${aceDecision ? ` Assurance: ${aceDecision.action}. ${aceDecision.reason}` : ""}${
+            outcome ? ` Resultat: ${outcome}` : ""
+          }`
         : calculationOnly
         ? `${hand.cards.length} carte(s) de ta main dans la table.`
         : outcome
@@ -2163,7 +2175,7 @@ function renderPlayers() {
         : recommendationInfo.reason;
 
       handCard.append(header, chips);
-      if (!calculationOnly) handCard.appendChild(choices);
+      if (showPlayerAdvice) handCard.appendChild(choices);
       if (hand.cards.length || hand.pendingAction || outcome) handCard.appendChild(note);
       elements.playersContainer.appendChild(handCard);
     });
