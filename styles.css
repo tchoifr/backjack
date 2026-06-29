@@ -202,6 +202,17 @@ h3 {
   line-height: 1.2;
 }
 
+.calculation-only-mode .result-panel {
+  grid-template-columns: 1fr;
+}
+
+.calculation-only-mode .result-grid,
+.calculation-only-mode .bet-box,
+.calculation-only-mode .bet-setting,
+.calculation-only-mode .rules-box {
+  display: none;
+}
+
 .workspace {
   display: grid;
   grid-template-columns: 280px minmax(0, 1fr);
@@ -510,6 +521,10 @@ h3 {
 }
 
 .dealer-hand {
+  background: #fbfcfb;
+}
+
+.other-players-hand {
   background: #fbfcfb;
 }
 
@@ -1441,6 +1456,13 @@ h3 {
   background:
     linear-gradient(180deg, rgba(39, 201, 255, 0.08), rgba(255, 255, 255, 0.03)),
     rgba(8, 17, 19, 0.88);
+}
+
+.other-players-hand {
+  border-color: rgba(246, 204, 98, 0.3);
+  background:
+    linear-gradient(180deg, rgba(246, 204, 98, 0.1), rgba(32, 214, 159, 0.04)),
+    rgba(12, 17, 12, 0.9);
 }
 
 .player-hand {

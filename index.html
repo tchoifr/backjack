@@ -76,7 +76,7 @@
             <input id="deckCount" type="number" min="1" max="12" step="1" value="6">
           </label>
 
-          <label class="field">
+          <label class="field bet-setting">
             <span>Mise de base</span>
             <input id="baseBet" type="number" min="1" max="100000" step="1" value="10">
           </label>
@@ -208,6 +208,26 @@
                 <select id="dealerCardSelect" aria-label="Ajouter une carte au croupier"></select>
                 <button type="button" id="addDealerCardButton" class="button secondary">Ajouter</button>
                 <button type="button" id="clearDealerButton" class="button secondary">Vider</button>
+              </div>
+            </section>
+
+            <section class="hand-card other-players-hand" aria-label="Cartes des autres joueurs" hidden>
+              <div class="hand-header">
+                <div>
+                  <span>Autres joueurs</span>
+                  <strong id="otherPlayersSummary">Aucune carte</strong>
+                </div>
+                <button type="button" id="selectOtherPlayersButton" class="button secondary mini select-hand-button">Selectionner</button>
+                <div class="recommendation">
+                  <span>Calcul</span>
+                  <strong>Cartes visibles</strong>
+                </div>
+              </div>
+              <div class="card-chip-row" id="otherPlayersCards"></div>
+              <div class="add-card-row">
+                <select id="otherPlayersCardSelect" aria-label="Ajouter une carte des autres joueurs"></select>
+                <button type="button" id="addOtherPlayersCardButton" class="button secondary">Ajouter</button>
+                <button type="button" id="clearOtherPlayersButton" class="button secondary">Vider</button>
               </div>
             </section>
 

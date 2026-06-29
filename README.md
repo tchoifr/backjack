@@ -29,6 +29,7 @@ Puis va sur `http://localhost:8080`.
 - Regles configurables : croupier S17/H17, abandon, double apres split, assurance, As splittes, re-split.
 - Profil `Regle en ligne` : 8 decks, croupier H17, 1 a 3 mains, assurance, double apres split, pas d'abandon, pas de re-split.
 - Paiements affiches pour `Regle en ligne` : main gagnee 1:1, blackjack 3:2, push rendu, assurance 2:1.
+- Profil `Regle vrai blackjack` : 8 decks, S17, blackjack 3:2, assurance 2:1 sur As, double sur deux premieres cartes, pas de double apres split, un seul split, zone `Autres joueurs` et alerte assurance si le croupier montre un As.
 - Decision du croupier : tirer jusqu'a 16, rester sur 17 dur, et appliquer S17/H17 sur soft 17.
 - Resultat de fin de manche : gagne, perdu, push, blackjack ou abandon.
 - Reglage du nombre de decks et de la mise de base.

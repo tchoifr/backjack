@@ -18,6 +18,9 @@ const STORAGE_KEY = "blackjack-counter-v1";
 const TEMPLATE_WIDTH = 28;
 const TEMPLATE_HEIGHT = 36;
 const RANK_CONFIDENCE_THRESHOLD = 0.44;
+const REAL_BLACKJACK_PROFILE = "real-blackjack";
+const OTHER_PLAYERS_TARGET = "other-players";
+const INSURANCE_TRUE_COUNT_INDEX = 3;
 const VPN_COUNTRIES = [
   { value: "argentine", label: "Argentine" },
   { value: "azerbaidjan", label: "Azerbaidjan" },
@@ -58,6 +61,29 @@ const RULE_PROFILES = [
     },
     summary: "8 decks, 1 a 3 mains, croupier tire soft 17, assurance, double apres split.",
     payout: "Blackjack 3:2, main gagnee 1:1, push rendu, assurance 2:1. RTP theorique 99.38%.",
+    payouts: {
+      win: "1:1",
+      blackjack: "3:2",
+      insurance: "2:1",
+      push: "mise rendue",
+    },
+  },
+  {
+    value: REAL_BLACKJACK_PROFILE,
+    label: "Regle vrai blackjack",
+    deckCount: 8,
+    playerCountMax: 1,
+    calculationOnly: true,
+    rules: {
+      dealerHitsSoft17: false,
+      surrenderAllowed: false,
+      doubleAfterSplitAllowed: true,
+      insuranceAllowed: true,
+      splitAcesOneCard: true,
+      resplitAllowed: false,
+    },
+    summary: "8 decks, S17, 1 joueur, double sur deux premieres cartes, DAS interdit, un seul split.",
+    payout: "Blackjack 3:2, assurance 2:1 sur As, push rendu. RTP: Blackjack 99,29 %, Perfect Pairs 95,90 %, 21+3 96,30 %.",
     payouts: {
       win: "1:1",
       blackjack: "3:2",
@@ -135,6 +161,13 @@ const elements = {
   selectDealerButton: document.querySelector("#selectDealerButton"),
   addDealerCardButton: document.querySelector("#addDealerCardButton"),
   clearDealerButton: document.querySelector("#clearDealerButton"),
+  otherPlayersHand: document.querySelector(".other-players-hand"),
+  otherPlayersSummary: document.querySelector("#otherPlayersSummary"),
+  otherPlayersCards: document.querySelector("#otherPlayersCards"),
+  otherPlayersCardSelect: document.querySelector("#otherPlayersCardSelect"),
+  selectOtherPlayersButton: document.querySelector("#selectOtherPlayersButton"),
+  addOtherPlayersCardButton: document.querySelector("#addOtherPlayersCardButton"),
+  clearOtherPlayersButton: document.querySelector("#clearOtherPlayersButton"),
   playersContainer: document.querySelector("#playersContainer"),
   undoButton: document.querySelector("#undoButton"),
   resetButton: document.querySelector("#resetButton"),
@@ -181,6 +214,7 @@ function createDefaultTable(playerCount) {
     betHistory: [],
     roundBet: 10,
     dealerCards: [],
+    otherPlayerCards: [],
     players: Array.from({ length: playerCount }, (_, index) => createPlayer(index + 1)),
   };
 }
@@ -313,6 +347,10 @@ function getPayouts() {
   return getRuleProfile().payouts || RULE_PROFILES[0].payouts;
 }
 
+function isCalculationOnlyMode(profile = getRuleProfile()) {
+  return Boolean(profile.calculationOnly);
+}
+
 function markCustomRuleProfile() {
   state.ruleProfile = "custom";
 }
@@ -333,6 +371,7 @@ function normalizeArchivedRound(round) {
   if (!round || typeof round !== "object") return null;
 
   const dealerCards = normalizeCards(round.dealerCards);
+  const otherPlayerCards = normalizeCards(round.otherPlayerCards || round.otherPlayersCards);
   const players = Array.isArray(round.players)
     ? round.players.map((player, index) => ({
         number: Math.max(1, Math.round(Number(player.number) || index + 1)),
@@ -348,17 +387,21 @@ function normalizeArchivedRound(round) {
       }))
     : [];
   const cards = normalizeCards(round.cards);
+  const playerCards = players.flatMap((player) => player.hands.flatMap((hand) => hand.cards));
 
-  if (!dealerCards.length && !players.some((player) => player.hands.some((hand) => hand.cards.length))) return null;
+  if (!dealerCards.length && !otherPlayerCards.length && !playerCards.length) return null;
+
+  const archivedCards = cards.length ? cards : [...dealerCards, ...playerCards, ...otherPlayerCards];
 
   return {
     id: typeof round.id === "string" ? round.id : createId(),
     createdAt: typeof round.createdAt === "string" ? round.createdAt : new Date().toISOString(),
     dealerCards,
+    otherPlayerCards,
     players,
-    cards: cards.length ? cards : [...dealerCards, ...players.flatMap((player) => player.hands.flatMap((hand) => hand.cards))],
-    cardCount: Math.max(0, Math.round(Number(round.cardCount) || cards.length)),
-    countDelta: Math.round(Number(round.countDelta) || 0),
+    cards: archivedCards,
+    cardCount: Math.max(0, Math.round(Number(round.cardCount) || archivedCards.length)),
+    countDelta: Math.round(Number(round.countDelta) || getCardsCountDelta(archivedCards)),
     totalBet: Math.max(0, Math.round(Number(round.totalBet) || 0)),
   };
 }
@@ -371,6 +414,7 @@ function normalizeTable(table) {
   normalized.betHistory = Array.isArray(table.betHistory) ? table.betHistory.slice(-10).map(normalizeBetSnapshot).filter(Boolean) : [];
   normalized.roundBet = Math.max(0, Math.round(Number(table.roundBet) || state.baseBet || 10));
   normalized.dealerCards = normalizeCards(table.dealerCards);
+  normalized.otherPlayerCards = normalizeCards(table.otherPlayerCards || table.otherPlayersCards);
   normalized.players = Array.from({ length: playerCount }, (_, index) => {
     const savedPlayer = Array.isArray(table.players) ? table.players[index] : null;
     const player = createPlayer(index + 1);
@@ -389,6 +433,10 @@ function normalizeTable(table) {
         fromSplit: Boolean(hand.fromSplit),
         splitAces: Boolean(hand.splitAces),
       }));
+
+      player.hands.forEach((hand) => {
+        if (hand.fromSplit && hand.status === "blackjack") hand.status = "stand";
+      });
     }
 
     if (!player.hands.length) player.hands = [createHand()];
@@ -397,6 +445,7 @@ function normalizeTable(table) {
 
   if (
     normalized.dealerCards.length ||
+    normalized.otherPlayerCards.length ||
     normalized.players.some((player) => player.hands.some((hand) => hand.cards.length))
   ) {
     normalized.roundStarted = true;
@@ -484,6 +533,13 @@ function handleRankGridClick(rank) {
   if (target === "dealer") {
     if (addRankToDealer(rank, { countIt: true })) {
       setTableStatus(`${rank} ajoutee au croupier et au compteur.`);
+    }
+    return;
+  }
+
+  if (target === OTHER_PLAYERS_TARGET) {
+    if (addRankToOtherPlayers(rank, { countIt: true })) {
+      setTableStatus(`${rank} ajoutee aux autres joueurs et au compteur.`);
     }
     return;
   }
@@ -603,8 +659,20 @@ function formatHistorySource(source) {
 function renderEdgeStatus(stats) {
   elements.edgeStatus.className = "status-box";
 
+  const label = elements.edgeStatus.querySelector("span");
   const title = elements.edgeStatus.querySelector("strong");
   const detail = elements.edgeStatus.querySelector("small");
+
+  if (isCalculationOnlyMode()) {
+    label.textContent = "Mode";
+    title.textContent = "Calcul seul";
+    detail.textContent = stats.seen
+      ? `${stats.seen} carte(s) comptee(s). Alerte assurance seulement si le croupier montre un As.`
+      : "Entre les cartes vues pour calculer le count.";
+    return;
+  }
+
+  label.textContent = "Avantage";
 
   if (stats.trueCount >= 4) {
     elements.edgeStatus.classList.add("hot");
@@ -698,7 +766,62 @@ function getActionRecommendation(stats) {
   };
 }
 
+function formatTrueCount(value) {
+  return `${value >= 0 ? "+" : ""}${value.toFixed(1)}`;
+}
+
+function getPrimaryPlayerHand() {
+  return state.table.players[0]?.hands[0] || null;
+}
+
+function getDealerAceInsuranceDecision(hand, stats) {
+  if (!isCalculationOnlyMode() || state.table.dealerCards[0] !== "A" || !hand) return null;
+
+  if (!hand.cards.length) {
+    return {
+      action: "Ajouter ta main",
+      reason: "Le croupier montre un As. Ajoute tes cartes pour afficher la decision assurance.",
+    };
+  }
+
+  if (hand.cards.length < 2) {
+    return {
+      action: "Attendre",
+      reason: "Ajoute la deuxieme carte de ta main avant de choisir assurance ou skip.",
+    };
+  }
+
+  const trueCount = stats.trueCount;
+  const formattedTrueCount = formatTrueCount(trueCount);
+  const handSummary = formatHandSummary(hand.cards);
+  const shouldInsure = trueCount >= INSURANCE_TRUE_COUNT_INDEX;
+
+  if (shouldInsure) {
+    return {
+      action: "Prendre assurance",
+      reason: `${handSummary}. True count ${formattedTrueCount}: assez de 10 restants, assurance 2:1 rentable.`,
+    };
+  }
+
+  if (isNaturalBlackjackHand(hand)) {
+    return {
+      action: "Skip assurance",
+      reason: `${handSummary}. Garde le blackjack 3:2; assurance/even money seulement vers true count +3 ou plus.`,
+    };
+  }
+
+  return {
+    action: "Skip assurance",
+    reason: `${handSummary}. Reste sans assurance: true count ${formattedTrueCount}, seuil assurance +3.`,
+  };
+}
+
 function renderBetSuggestion(stats) {
+  if (isCalculationOnlyMode()) {
+    elements.betSuggestion.textContent = "Desactivee";
+    return;
+  }
+
   elements.betSuggestion.textContent = `${getBetAmount(stats)}`;
 }
 
@@ -772,12 +895,17 @@ function applyRuleProfile(value) {
   }
 
   const maxPlayers = getPlayerCountMax(profile);
-  if (state.table.playerCount > maxPlayers) {
+  if (isCalculationOnlyMode(profile)) {
+    setTablePlayerCount(1);
+  } else if (state.table.playerCount > maxPlayers) {
     setTablePlayerCount(maxPlayers);
   }
 
   if (profile.value === "online") {
     setTableStatus("Profil Regle en ligne applique: 8 decks, H17, assurance, 1 a 3 mains.");
+  }
+  if (isCalculationOnlyMode(profile)) {
+    setTableStatus("Profil Regle vrai blackjack applique: 8 decks, S17, 1 joueur, zone Autres joueurs, alerte assurance sur As.");
   }
 
   saveState();
@@ -785,6 +913,22 @@ function applyRuleProfile(value) {
 }
 
 function renderActionRecommendation(stats) {
+  if (isCalculationOnlyMode()) {
+    const aceDecision = getDealerAceInsuranceDecision(getPrimaryPlayerHand(), stats);
+
+    elements.resultPanel.className = "result-panel";
+    elements.resultTitle.textContent = aceDecision ? `Croupier As - ${aceDecision.action}` : "Mode calcul seul";
+    elements.resultAction.textContent = aceDecision
+      ? aceDecision.reason
+      : stats.seen
+      ? `Running count ${signed(stats.running)}. True count ${formatTrueCount(stats.trueCount)}.`
+      : "Entre les cartes visibles pour demarrer le calcul.";
+    elements.resultBet.textContent = "Non affichee";
+    elements.resultPlay.textContent = aceDecision ? aceDecision.action : "Non affiche";
+    elements.resultReason.textContent = "Profil Regle vrai blackjack";
+    return;
+  }
+
   const recommendation = getActionRecommendation(stats);
   const activeHand = findActiveHand();
   const activeRecommendation = activeHand ? getRuleAdjustedRecommendation(activeHand.hand) : null;
@@ -832,6 +976,10 @@ function getHandInfo(cards) {
   };
 }
 
+function isNaturalBlackjackHand(hand) {
+  return !hand.fromSplit && getHandInfo(hand.cards).blackjack;
+}
+
 function formatHandSummary(cards) {
   if (!cards.length) return "Aucune carte";
 
@@ -875,6 +1023,7 @@ function getHandOutcome(hand) {
   const dealerDecision = getDealerDecision();
   const dealerInfo = getHandInfo(state.table.dealerCards);
   const playerInfo = getHandInfo(hand.cards);
+  const playerBlackjack = isNaturalBlackjackHand(hand);
   const payouts = getPayouts();
 
   if (hand.status === "surrender") return "Perdu 1/2 mise - abandon.";
@@ -882,11 +1031,11 @@ function getHandOutcome(hand) {
   if (hand.cards.length < 2) return "";
   if (!["dealer-stand", "done"].includes(dealerDecision.code) && hasLivePlayerHands()) return "";
   if (dealerInfo.blackjack) {
-    return playerInfo.blackjack
+    return playerBlackjack
       ? `Push - deux blackjacks (${payouts.push}).`
       : "Perdu - blackjack croupier.";
   }
-  if (playerInfo.blackjack) return `Gagne ${payouts.blackjack} - blackjack joueur.`;
+  if (playerBlackjack) return `Gagne ${payouts.blackjack} - blackjack joueur.`;
   if (dealerInfo.bust) return `Gagne ${payouts.win} - croupier saute.`;
   if (!state.table.dealerCards.length) return "";
   if (playerInfo.total > dealerInfo.total) return `Gagne ${payouts.win} - main plus forte.`;
@@ -920,7 +1069,7 @@ function getHandRecommendation(hand) {
   if (state.rules.splitAcesOneCard && hand.splitAces && cards.length >= 2) {
     return recommendation("positive", "Rester", "As splittes: une seule carte par main.", "done");
   }
-  if (info.blackjack) return recommendation("hot", "Blackjack", "Ne tire pas.", "done");
+  if (isNaturalBlackjackHand(hand)) return recommendation("hot", "Blackjack", "Ne tire pas.", "done");
   if (info.bust) return recommendation("negative", "Saute", "Main perdue.", "done");
 
   if (info.pair && (!hand.fromSplit || state.rules.resplitAllowed)) {
@@ -1079,7 +1228,7 @@ function hardRecommendation(total, dealer) {
 function getAllowedActions(hand) {
   const info = getHandInfo(hand.cards);
   if (hand.pendingAction) return [];
-  if (!getDealerUpValue() || hand.cards.length < 2 || hand.status !== "playing" || info.bust || info.blackjack) return [];
+  if (!getDealerUpValue() || hand.cards.length < 2 || hand.status !== "playing" || info.bust || isNaturalBlackjackHand(hand)) return [];
   if (state.rules.splitAcesOneCard && hand.splitAces && hand.cards.length >= 2) return [];
 
   const actions = ["hit", "stand"];
@@ -1108,7 +1257,7 @@ function actionLabel(action) {
 
 function getAllTableCards() {
   const playerCards = state.table.players.flatMap((player) => player.hands.flatMap((hand) => hand.cards));
-  return [...state.table.dealerCards, ...playerCards];
+  return [...state.table.dealerCards, ...playerCards, ...(state.table.otherPlayerCards || [])];
 }
 
 function getRankCounts(cards) {
@@ -1175,6 +1324,10 @@ function getQuickTargets() {
     { value: "counter", label: "Compteur seul" },
     { value: "dealer", label: "Croupier" },
   ];
+
+  if (isCalculationOnlyMode()) {
+    targets.push({ value: OTHER_PLAYERS_TARGET, label: "Autres joueurs" });
+  }
 
   state.table.players.forEach((player, playerIndex) => {
     player.hands.forEach((hand, handIndex) => {
@@ -1263,6 +1416,7 @@ function createArchivedRound() {
     id: createId(),
     createdAt: new Date().toISOString(),
     dealerCards: [...state.table.dealerCards],
+    otherPlayerCards: [...(state.table.otherPlayerCards || [])],
     players,
     cards,
     cardCount: cards.length,
@@ -1481,6 +1635,47 @@ function clearDealerCards() {
   renderApp();
 }
 
+function addOtherPlayersCard() {
+  const rank = elements.otherPlayersCardSelect.value;
+  if (!RANKS.includes(rank)) {
+    setTableStatus("Choisis une carte des autres joueurs a ajouter.");
+    return false;
+  }
+
+  return addRankToOtherPlayers(rank);
+}
+
+function addRankToOtherPlayers(rank, options = {}) {
+  if (!RANKS.includes(rank)) {
+    setTableStatus("Choisis une carte des autres joueurs a ajouter.");
+    return false;
+  }
+
+  state.table.roundStarted = true;
+  state.table.otherPlayerCards.push(rank);
+  if (options.countIt) {
+    markTableCardCounted(rank);
+    addCountEntry(rank, "table");
+  }
+  saveState();
+  renderApp();
+  return true;
+}
+
+function removeOtherPlayerCard(index) {
+  const [rank] = state.table.otherPlayerCards.splice(index, 1);
+  removeCountedTableCard(rank);
+  saveState();
+  renderApp();
+}
+
+function clearOtherPlayerCards() {
+  state.table.otherPlayerCards.forEach(removeCountedTableCard);
+  state.table.otherPlayerCards = [];
+  saveState();
+  renderApp();
+}
+
 function addRankToPlayerHand(playerIndex, handIndex, rank, options = {}) {
   const player = state.table.players[playerIndex];
   const hand = player?.hands[handIndex];
@@ -1513,7 +1708,7 @@ function addRankToPlayerHand(playerIndex, handIndex, rank, options = {}) {
 
   const info = getHandInfo(hand.cards);
   if (info.bust) hand.status = "bust";
-  if (info.blackjack) hand.status = "blackjack";
+  if (isNaturalBlackjackHand(hand)) hand.status = "blackjack";
 
   const nextSplitTarget = findNextSplitHandNeedingCard(playerIndex, handIndex);
   if (nextSplitTarget) state.quickTarget = nextSplitTarget;
@@ -1615,13 +1810,17 @@ function splitHand(playerIndex, handIndex) {
 }
 
 function renderTable() {
+  const calculationOnly = isCalculationOnlyMode();
   elements.playerCount.max = `${getPlayerCountMax()}`;
   elements.playerCount.value = `${state.table.playerCount}`;
+  elements.playerCount.disabled = calculationOnly;
   elements.dealerSummary.textContent = formatHandSummary(state.table.dealerCards);
   const dealerDecision = getDealerDecision();
-  elements.dealerRecommendation.className = `recommendation ${dealerDecision.tone}`;
-  elements.dealerRecommendation.querySelector("strong").textContent = dealerDecision.action;
-  elements.dealerRecommendation.querySelector("span").textContent = "Regle croupier";
+  elements.dealerRecommendation.className = calculationOnly ? "recommendation" : `recommendation ${dealerDecision.tone}`;
+  elements.dealerRecommendation.querySelector("strong").textContent = calculationOnly
+    ? formatHandSummary(state.table.dealerCards)
+    : dealerDecision.action;
+  elements.dealerRecommendation.querySelector("span").textContent = calculationOnly ? "Calcul" : "Regle croupier";
   elements.countTableButton.disabled = !hasUncountedVisibleCards();
   const dealerSelected = getActiveQuickTarget() === "dealer";
   elements.dealerHand.classList.toggle("selected-hand", dealerSelected);
@@ -1632,8 +1831,30 @@ function renderTable() {
   renderBettingPanel();
   renderRoundSteps();
   renderCardChips(elements.dealerCards, state.table.dealerCards, removeDealerCard);
+  renderOtherPlayers();
   renderPlayers();
   renderRoundMemory();
+}
+
+function renderOtherPlayers() {
+  if (!elements.otherPlayersHand) return;
+
+  const enabled = isCalculationOnlyMode();
+  elements.otherPlayersHand.hidden = !enabled;
+  if (!enabled) return;
+
+  const selected = getActiveQuickTarget() === OTHER_PLAYERS_TARGET;
+  const cards = state.table.otherPlayerCards || [];
+  const countDelta = getCardsCountDelta(cards);
+
+  elements.otherPlayersHand.classList.toggle("selected-hand", selected);
+  elements.otherPlayersSummary.textContent = cards.length
+    ? `${cards.length} carte(s), Hi-Lo ${signed(countDelta)}`
+    : "Aucune carte";
+  elements.selectOtherPlayersButton.classList.toggle("selected", selected);
+  elements.selectOtherPlayersButton.textContent = selected ? "Selectionne" : "Selectionner";
+  elements.selectOtherPlayersButton.setAttribute("aria-pressed", `${selected}`);
+  renderCardChips(elements.otherPlayersCards, cards, removeOtherPlayerCard);
 }
 
 function renderBettingPanel() {
@@ -1698,6 +1919,9 @@ function renderRoundMemory() {
     const dealer = document.createElement("span");
     dealer.textContent = `Croupier: ${formatCards(round.dealerCards)}`;
 
+    const otherPlayers = document.createElement("span");
+    otherPlayers.textContent = `Autres joueurs: ${formatCards(round.otherPlayerCards)}`;
+
     const players = document.createElement("span");
     players.textContent = round.players
       .map((player) => `J${player.number}: ${player.hands.map((hand) => formatCards(hand.cards)).join(" / ")}`)
@@ -1706,7 +1930,7 @@ function renderRoundMemory() {
     const meta = document.createElement("span");
     meta.textContent = `${round.cardCount} carte(s), Hi-Lo ${signed(round.countDelta)}, mise totale ${round.totalBet}`;
 
-    item.append(title, dealer, players, meta);
+    item.append(title, dealer, otherPlayers, players, meta);
     elements.roundMemoryList.appendChild(item);
   });
 }
@@ -1733,6 +1957,40 @@ function getPlayerActionStepText() {
 }
 
 function renderRoundSteps() {
+  if (isCalculationOnlyMode()) {
+    const hasDealerCards = state.table.dealerCards.length > 0;
+    const hasPlayerCards = state.table.players.some((player) =>
+      player.hands.some((hand) => hand.cards.length > 0)
+    );
+    const hasOtherCards = (state.table.otherPlayerCards || []).length > 0;
+    const hasUncountedCards = hasUncountedVisibleCards();
+    const steps = [
+      { text: "Entrer les cartes visibles du croupier.", done: hasDealerCards, active: !hasDealerCards },
+      { text: "Entrer ta main joueur.", done: hasPlayerCards, active: hasDealerCards && !hasPlayerCards },
+      {
+        text: "Ajouter les cartes visibles des autres joueurs dans la zone dediee.",
+        done: hasOtherCards,
+        active: hasDealerCards && hasPlayerCards && !hasOtherCards,
+      },
+      {
+        text: hasUncountedCards
+          ? "Compter les cartes visibles non ajoutees au compteur."
+          : "Running count et true count a jour.",
+        done: !hasUncountedCards,
+        active: hasUncountedCards,
+      },
+    ];
+
+    elements.roundSteps.replaceChildren();
+    steps.forEach((step) => {
+      const item = document.createElement("li");
+      item.className = `${step.done ? "done" : ""} ${step.active ? "active" : ""}`.trim();
+      item.textContent = step.text;
+      elements.roundSteps.appendChild(item);
+    });
+    return;
+  }
+
   const hasDealer = Boolean(state.table.dealerCards[0]);
   const allInitialHandsReady = state.table.players.every((player) =>
     player.hands.every((hand) => hand.cards.length >= 2 || hand.status !== "playing")
@@ -1820,6 +2078,8 @@ function renderCardChips(container, cards, onRemove, options = {}) {
 function renderPlayers() {
   elements.playersContainer.replaceChildren();
   const activeTarget = getActiveQuickTarget();
+  const calculationOnly = isCalculationOnlyMode();
+  const stats = getCountStats();
 
   state.table.players.forEach((player, playerIndex) => {
     player.hands.forEach((hand, handIndex) => {
@@ -1855,12 +2115,17 @@ function renderPlayers() {
       handControls.className = "hand-controls";
       handControls.append(selectButton, clearButton);
 
+      const aceDecision = getDealerAceInsuranceDecision(hand, stats);
       const recommendationBox = document.createElement("div");
-      recommendationBox.className = `recommendation ${recommendationInfo.tone}`;
+      recommendationBox.className = calculationOnly ? "recommendation" : `recommendation ${recommendationInfo.tone}`;
       const recommendationLabel = document.createElement("span");
-      recommendationLabel.textContent = "Conseil";
+      recommendationLabel.textContent = aceDecision ? "As croupier" : calculationOnly ? "Calcul" : "Conseil";
       const recommendationAction = document.createElement("strong");
-      recommendationAction.textContent = recommendationInfo.action;
+      recommendationAction.textContent = aceDecision
+        ? aceDecision.action
+        : calculationOnly
+        ? formatHandSummary(hand.cards)
+        : recommendationInfo.action;
       recommendationBox.append(recommendationLabel, recommendationAction);
 
       header.append(titleWrap, handControls, recommendationBox);
@@ -1873,23 +2138,32 @@ function renderPlayers() {
 
       const choices = document.createElement("div");
       choices.className = "choice-row";
-      getAllowedActions(hand).forEach((action) => {
-        const button = document.createElement("button");
-        button.type = "button";
-        button.className = `button secondary ${recommendationInfo.code === action ? "recommended-choice" : ""} ${
-          action === "surrender" || action === "insurance" ? "warning-choice" : ""
-        }`.trim();
-        button.textContent = actionLabel(action);
-        button.addEventListener("click", () => applyHandAction(playerIndex, handIndex, action));
-        choices.appendChild(button);
-      });
+      if (!calculationOnly) {
+        getAllowedActions(hand).forEach((action) => {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = `button secondary ${recommendationInfo.code === action ? "recommended-choice" : ""} ${
+            action === "surrender" || action === "insurance" ? "warning-choice" : ""
+          }`.trim();
+          button.textContent = actionLabel(action);
+          button.addEventListener("click", () => applyHandAction(playerIndex, handIndex, action));
+          choices.appendChild(button);
+        });
+      }
 
       const note = document.createElement("p");
       note.className = "action-note";
       const outcome = getHandOutcome(hand);
-      note.textContent = outcome ? `${recommendationInfo.reason} Resultat: ${outcome}` : recommendationInfo.reason;
+      note.textContent = aceDecision
+        ? aceDecision.reason
+        : calculationOnly
+        ? `${hand.cards.length} carte(s) de ta main dans la table.`
+        : outcome
+        ? `${recommendationInfo.reason} Resultat: ${outcome}`
+        : recommendationInfo.reason;
 
-      handCard.append(header, chips, choices);
+      handCard.append(header, chips);
+      if (!calculationOnly) handCard.appendChild(choices);
       if (hand.cards.length || hand.pendingAction || outcome) handCard.appendChild(note);
       elements.playersContainer.appendChild(handCard);
     });
@@ -1905,6 +2179,7 @@ function fillRankSelect(select, placeholder = "Carte") {
 function renderApp() {
   const stats = getCountStats();
 
+  document.body.classList.toggle("calculation-only-mode", isCalculationOnlyMode());
   elements.runningCount.textContent = signed(stats.running);
   elements.trueCount.textContent = stats.trueCount.toFixed(1);
   elements.seenCount.textContent = `${stats.seen}`;
@@ -2908,6 +3183,9 @@ function bindEvents() {
   elements.selectDealerButton.addEventListener("click", () => setQuickTarget("dealer"));
   elements.addDealerCardButton.addEventListener("click", addDealerCard);
   elements.clearDealerButton.addEventListener("click", clearDealerCards);
+  elements.selectOtherPlayersButton?.addEventListener("click", () => setQuickTarget(OTHER_PLAYERS_TARGET));
+  elements.addOtherPlayersCardButton?.addEventListener("click", addOtherPlayersCard);
+  elements.clearOtherPlayersButton?.addEventListener("click", clearOtherPlayerCards);
   elements.photoInput?.addEventListener("change", (event) => loadPhoto(event.target.files[0]));
   elements.analyzeButton?.addEventListener("click", analyzePhoto);
   elements.addDetectedButton?.addEventListener("click", addDetectedCards);
@@ -2919,6 +3197,7 @@ bindEvents();
 fillVpnCountrySelect();
 fillRuleProfileSelect();
 fillRankSelect(elements.dealerCardSelect, "Carte croupier");
+if (elements.otherPlayersCardSelect) fillRankSelect(elements.otherPlayersCardSelect, "Carte autre joueur");
 renderRankGrid();
 renderApp();
 drawPlaceholder();
