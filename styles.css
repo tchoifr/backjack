@@ -313,6 +313,28 @@ h3 {
   background: var(--surface-2);
 }
 
+.profile-summary {
+  display: grid;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  background: var(--surface-2);
+}
+
+.profile-summary strong {
+  color: var(--ink);
+  font-size: 0.94rem;
+  line-height: 1.35;
+}
+
+.profile-summary span {
+  color: var(--muted);
+  font-size: 0.84rem;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
 .vpn-heading {
   display: flex;
   gap: 12px;
@@ -1187,6 +1209,7 @@ h3 {
 .table-history,
 .quick-entry,
 .rules-box,
+.profile-summary,
 .vpn-box,
 .status-box,
 .bet-box,
@@ -1281,6 +1304,7 @@ h3 {
 .table-status,
 .quick-target-status,
 .vpn-status,
+.profile-summary span,
 .action-note,
 .memory-heading p,
 .round-flow li,

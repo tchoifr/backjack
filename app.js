@@ -30,7 +30,45 @@ const VPN_COUNTRIES = [
   { value: "tanzanie", label: "Tanzanie" },
 ];
 
+const RULE_PROFILES = [
+  {
+    value: "custom",
+    label: "Personnalise",
+    summary: "Modifie les regles ci-dessous selon la table jouee.",
+    payout: "Paiements a verifier sur la table avant de jouer.",
+    payouts: {
+      win: "1:1",
+      blackjack: "3:2",
+      insurance: "2:1",
+      push: "mise rendue",
+    },
+  },
+  {
+    value: "online",
+    label: "Regle en ligne",
+    deckCount: 8,
+    playerCountMax: 3,
+    rules: {
+      dealerHitsSoft17: true,
+      surrenderAllowed: false,
+      doubleAfterSplitAllowed: true,
+      insuranceAllowed: true,
+      splitAcesOneCard: true,
+      resplitAllowed: false,
+    },
+    summary: "8 decks, 1 a 3 mains, croupier tire soft 17, assurance, double apres split.",
+    payout: "Blackjack 3:2, main gagnee 1:1, push rendu, assurance 2:1. RTP theorique 99.38%.",
+    payouts: {
+      win: "1:1",
+      blackjack: "3:2",
+      insurance: "2:1",
+      push: "mise rendue",
+    },
+  },
+];
+
 const state = {
+  ruleProfile: "custom",
   deckCount: 6,
   baseBet: 10,
   vpn: createDefaultVpnState(),
@@ -63,11 +101,15 @@ const elements = {
   vpnToggleButton: document.querySelector("#vpnToggleButton"),
   vpnState: document.querySelector("#vpnState"),
   vpnStatus: document.querySelector("#vpnStatus"),
+  ruleProfileSelect: document.querySelector("#ruleProfileSelect"),
+  ruleProfileSummary: document.querySelector("#ruleProfileSummary"),
+  ruleProfilePayout: document.querySelector("#ruleProfilePayout"),
   dealerSoft17Rule: document.querySelector("#dealerSoft17Rule"),
   surrenderAllowed: document.querySelector("#surrenderAllowed"),
   doubleAfterSplitAllowed: document.querySelector("#doubleAfterSplitAllowed"),
   insuranceAllowed: document.querySelector("#insuranceAllowed"),
   splitAcesOneCard: document.querySelector("#splitAcesOneCard"),
+  resplitAllowed: document.querySelector("#resplitAllowed"),
   edgeStatus: document.querySelector("#edgeStatus"),
   betSuggestion: document.querySelector("#betSuggestion"),
   playerCount: document.querySelector("#playerCount"),
@@ -127,6 +169,7 @@ function createDefaultRules() {
     doubleAfterSplitAllowed: true,
     insuranceAllowed: true,
     splitAcesOneCard: true,
+    resplitAllowed: true,
   };
 }
 
@@ -188,10 +231,16 @@ function loadState() {
     if (!raw) return;
 
     const saved = JSON.parse(raw);
+    if (typeof saved.ruleProfile === "string") state.ruleProfile = normalizeRuleProfile(saved.ruleProfile);
     if (Number.isFinite(saved.deckCount)) state.deckCount = saved.deckCount;
     if (Number.isFinite(saved.baseBet)) state.baseBet = saved.baseBet;
     if (saved.vpn) state.vpn = normalizeVpnState(saved.vpn);
     if (saved.rules) state.rules = normalizeRules(saved.rules);
+    const savedProfile = getRuleProfile();
+    if (savedProfile.value !== "custom") {
+      if (savedProfile.rules) state.rules = normalizeRules(savedProfile.rules);
+      if (Number.isFinite(savedProfile.deckCount)) state.deckCount = clamp(Math.round(savedProfile.deckCount), 1, 12);
+    }
     if (Array.isArray(saved.history)) {
       state.history = saved.history.filter((entry) => RANKS.includes(entry.rank));
     }
@@ -214,6 +263,7 @@ function saveState() {
     window.localStorage.setItem(
       STORAGE_KEY,
       JSON.stringify({
+        ruleProfile: state.ruleProfile,
         deckCount: state.deckCount,
         baseBet: state.baseBet,
         vpn: state.vpn,
@@ -247,6 +297,26 @@ function getVpnCountryLabel(value = state.vpn.country) {
   return getVpnCountry(value)?.label || VPN_COUNTRIES[0].label;
 }
 
+function getRuleProfile(value = state.ruleProfile) {
+  return RULE_PROFILES.find((profile) => profile.value === value) || RULE_PROFILES[0];
+}
+
+function normalizeRuleProfile(value) {
+  return getRuleProfile(value).value;
+}
+
+function getPlayerCountMax(profile = getRuleProfile()) {
+  return Number.isFinite(profile.playerCountMax) ? profile.playerCountMax : 7;
+}
+
+function getPayouts() {
+  return getRuleProfile().payouts || RULE_PROFILES[0].payouts;
+}
+
+function markCustomRuleProfile() {
+  state.ruleProfile = "custom";
+}
+
 function normalizeRules(rules) {
   const defaults = createDefaultRules();
   return {
@@ -255,6 +325,7 @@ function normalizeRules(rules) {
     doubleAfterSplitAllowed: Boolean(rules.doubleAfterSplitAllowed ?? defaults.doubleAfterSplitAllowed),
     insuranceAllowed: Boolean(rules.insuranceAllowed ?? defaults.insuranceAllowed),
     splitAcesOneCard: Boolean(rules.splitAcesOneCard ?? defaults.splitAcesOneCard),
+    resplitAllowed: Boolean(rules.resplitAllowed ?? defaults.resplitAllowed),
   };
 }
 
@@ -293,7 +364,7 @@ function normalizeArchivedRound(round) {
 }
 
 function normalizeTable(table) {
-  const playerCount = clamp(Math.round(Number(table.playerCount) || 1), 1, 7);
+  const playerCount = clamp(Math.round(Number(table.playerCount) || 1), 1, getPlayerCountMax());
   const normalized = createDefaultTable(playerCount);
   normalized.countedCounts = normalizeCountedCounts(table.countedCounts);
   normalized.roundStarted = Boolean(table.roundStarted);
@@ -636,6 +707,11 @@ function fillVpnCountrySelect() {
   VPN_COUNTRIES.forEach((country) => appendOption(elements.vpnCountrySelect, country.value, country.label));
 }
 
+function fillRuleProfileSelect() {
+  elements.ruleProfileSelect.replaceChildren();
+  RULE_PROFILES.forEach((profile) => appendOption(elements.ruleProfileSelect, profile.value, profile.label));
+}
+
 function renderVpnControls() {
   const countryLabel = getVpnCountryLabel();
   elements.vpnBox.classList.toggle("active", state.vpn.enabled);
@@ -664,15 +740,46 @@ function toggleVpn() {
 }
 
 function renderRulesControls() {
+  const profile = getRuleProfile();
+  elements.ruleProfileSelect.value = profile.value;
+  elements.ruleProfileSummary.textContent = profile.summary;
+  elements.ruleProfilePayout.textContent = profile.payout;
   elements.dealerSoft17Rule.value = state.rules.dealerHitsSoft17 ? "hit" : "stand";
   elements.surrenderAllowed.checked = state.rules.surrenderAllowed;
   elements.doubleAfterSplitAllowed.checked = state.rules.doubleAfterSplitAllowed;
   elements.insuranceAllowed.checked = state.rules.insuranceAllowed;
   elements.splitAcesOneCard.checked = state.rules.splitAcesOneCard;
+  elements.resplitAllowed.checked = state.rules.resplitAllowed;
 }
 
 function updateRule(key, value) {
+  markCustomRuleProfile();
   state.rules[key] = value;
+  saveState();
+  renderApp();
+}
+
+function applyRuleProfile(value) {
+  const profile = getRuleProfile(value);
+  state.ruleProfile = profile.value;
+
+  if (profile.rules) {
+    state.rules = normalizeRules(profile.rules);
+  }
+
+  if (Number.isFinite(profile.deckCount)) {
+    state.deckCount = clamp(Math.round(profile.deckCount), 1, 12);
+  }
+
+  const maxPlayers = getPlayerCountMax(profile);
+  if (state.table.playerCount > maxPlayers) {
+    setTablePlayerCount(maxPlayers);
+  }
+
+  if (profile.value === "online") {
+    setTableStatus("Profil Regle en ligne applique: 8 decks, H17, assurance, 1 a 3 mains.");
+  }
+
   saveState();
   renderApp();
 }
@@ -768,18 +875,23 @@ function getHandOutcome(hand) {
   const dealerDecision = getDealerDecision();
   const dealerInfo = getHandInfo(state.table.dealerCards);
   const playerInfo = getHandInfo(hand.cards);
+  const payouts = getPayouts();
 
   if (hand.status === "surrender") return "Perdu 1/2 mise - abandon.";
   if (playerInfo.bust) return "Perdu - joueur saute.";
   if (hand.cards.length < 2) return "";
   if (!["dealer-stand", "done"].includes(dealerDecision.code) && hasLivePlayerHands()) return "";
-  if (dealerInfo.blackjack) return playerInfo.blackjack ? "Push - deux blackjacks." : "Perdu - blackjack croupier.";
-  if (playerInfo.blackjack) return "Gagne - blackjack joueur.";
-  if (dealerInfo.bust) return "Gagne - croupier saute.";
+  if (dealerInfo.blackjack) {
+    return playerInfo.blackjack
+      ? `Push - deux blackjacks (${payouts.push}).`
+      : "Perdu - blackjack croupier.";
+  }
+  if (playerInfo.blackjack) return `Gagne ${payouts.blackjack} - blackjack joueur.`;
+  if (dealerInfo.bust) return `Gagne ${payouts.win} - croupier saute.`;
   if (!state.table.dealerCards.length) return "";
-  if (playerInfo.total > dealerInfo.total) return "Gagne - main plus forte.";
+  if (playerInfo.total > dealerInfo.total) return `Gagne ${payouts.win} - main plus forte.`;
   if (playerInfo.total < dealerInfo.total) return "Perdu - croupier plus fort.";
-  return "Push - egalite.";
+  return `Push - egalite (${payouts.push}).`;
 }
 
 function getDealerUpValue() {
@@ -811,7 +923,7 @@ function getHandRecommendation(hand) {
   if (info.blackjack) return recommendation("hot", "Blackjack", "Ne tire pas.", "done");
   if (info.bust) return recommendation("negative", "Saute", "Main perdue.", "done");
 
-  if (info.pair) {
+  if (info.pair && (!hand.fromSplit || state.rules.resplitAllowed)) {
     const pairRank = splitValue(cards[0]);
     const pairMove = pairRecommendation(pairRank, dealer);
     if (pairMove) return pairMove;
@@ -974,7 +1086,7 @@ function getAllowedActions(hand) {
   if (hand.cards.length === 2) {
     if (!hand.fromSplit || state.rules.doubleAfterSplitAllowed) actions.push("double");
     if (state.rules.surrenderAllowed && !hand.fromSplit) actions.push("surrender");
-    if (info.pair) actions.push("split");
+    if (info.pair && (!hand.fromSplit || state.rules.resplitAllowed)) actions.push("split");
     if (state.rules.insuranceAllowed && state.table.dealerCards[0] === "A" && !hand.actionLog.includes("Assurance")) {
       actions.push("insurance");
     }
@@ -1283,8 +1395,8 @@ function undoTableBet() {
   renderApp();
 }
 
-function setPlayerCount(count) {
-  const nextCount = clamp(Math.round(Number(count) || 1), 1, 7);
+function setTablePlayerCount(count) {
+  const nextCount = clamp(Math.round(Number(count) || 1), 1, getPlayerCountMax());
   const currentPlayers = state.table.players;
   state.table.playerCount = nextCount;
   state.table.players = Array.from({ length: nextCount }, (_, index) => {
@@ -1300,6 +1412,15 @@ function setPlayerCount(count) {
     });
     return player;
   });
+}
+
+function setPlayerCount(count) {
+  const requestedCount = Math.round(Number(count) || 1);
+  const maxPlayers = getPlayerCountMax();
+  setTablePlayerCount(count);
+  if (requestedCount > maxPlayers) {
+    setTableStatus(`Ce profil limite la table a ${maxPlayers} main(s).`);
+  }
   saveState();
   renderApp();
 }
@@ -1446,7 +1567,7 @@ function applyHandAction(playerIndex, handIndex, action) {
 
   if (action === "insurance") {
     hand.actionLog.push("Assurance");
-    setTableStatus("Assurance notee. Continue ensuite la decision normale de la main.");
+    setTableStatus(`Assurance notee: paiement ${getPayouts().insurance} si le croupier a blackjack.`);
     saveState();
     renderApp();
     return;
@@ -1494,6 +1615,7 @@ function splitHand(playerIndex, handIndex) {
 }
 
 function renderTable() {
+  elements.playerCount.max = `${getPlayerCountMax()}`;
   elements.playerCount.value = `${state.table.playerCount}`;
   elements.dealerSummary.textContent = formatHandSummary(state.table.dealerCards);
   const dealerDecision = getDealerDecision();
@@ -1604,6 +1726,12 @@ function formatDateTime(value) {
   });
 }
 
+function getPlayerActionStepText() {
+  const actions = ["tirer", "rester", "doubler", "split"];
+  if (state.rules.surrenderAllowed) actions.push("abandon");
+  return `Choisir ${actions.join(" / ")}.`;
+}
+
 function renderRoundSteps() {
   const hasDealer = Boolean(state.table.dealerCards[0]);
   const allInitialHandsReady = state.table.players.every((player) =>
@@ -1622,7 +1750,7 @@ function renderRoundSteps() {
     {
       text: activeHand
         ? `Jouer Joueur ${activeHand.player.number}, main ${activeHand.handIndex + 1}.`
-        : "Choisir tirer / rester / doubler / split / abandon.",
+        : getPlayerActionStepText(),
       done: allHandsDone,
       active: hasDealer && allInitialHandsReady && Boolean(activeHand),
     },
@@ -2729,6 +2857,7 @@ function addMissingDetection() {
 
 function bindEvents() {
   elements.deckCount.addEventListener("change", () => {
+    markCustomRuleProfile();
     state.deckCount = clamp(Math.round(Number(elements.deckCount.value) || 6), 1, 12);
     saveState();
     renderApp();
@@ -2743,6 +2872,7 @@ function bindEvents() {
 
   elements.vpnCountrySelect.addEventListener("change", () => setVpnCountry(elements.vpnCountrySelect.value));
   elements.vpnToggleButton.addEventListener("click", toggleVpn);
+  elements.ruleProfileSelect.addEventListener("change", () => applyRuleProfile(elements.ruleProfileSelect.value));
 
   elements.dealerSoft17Rule.addEventListener("change", () => {
     updateRule("dealerHitsSoft17", elements.dealerSoft17Rule.value === "hit");
@@ -2758,6 +2888,9 @@ function bindEvents() {
   });
   elements.splitAcesOneCard.addEventListener("change", () => {
     updateRule("splitAcesOneCard", elements.splitAcesOneCard.checked);
+  });
+  elements.resplitAllowed.addEventListener("change", () => {
+    updateRule("resplitAllowed", elements.resplitAllowed.checked);
   });
 
   elements.undoButton.addEventListener("click", undoLastCard);
@@ -2784,6 +2917,7 @@ function bindEvents() {
 loadState();
 bindEvents();
 fillVpnCountrySelect();
+fillRuleProfileSelect();
 fillRankSelect(elements.dealerCardSelect, "Carte croupier");
 renderRankGrid();
 renderApp();

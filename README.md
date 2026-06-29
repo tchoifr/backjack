@@ -26,7 +26,9 @@ Puis va sur `http://localhost:8080`.
 - Recommandation par main : tirer, rester, doubler, split, abandon ou assurance.
 - Boutons d'action pour jouer la main active sans simuler de fausses cartes.
 - Comptage des cartes visibles de la table sans recompter les cartes deja ajoutees.
-- Regles configurables : croupier S17/H17, abandon, double apres split, assurance, As splittes.
+- Regles configurables : croupier S17/H17, abandon, double apres split, assurance, As splittes, re-split.
+- Profil `Regle en ligne` : 8 decks, croupier H17, 1 a 3 mains, assurance, double apres split, pas d'abandon, pas de re-split.
+- Paiements affiches pour `Regle en ligne` : main gagnee 1:1, blackjack 3:2, push rendu, assurance 2:1.
 - Decision du croupier : tirer jusqu'a 16, rester sur 17 dur, et appliquer S17/H17 sur soft 17.
 - Resultat de fin de manche : gagne, perdu, push, blackjack ou abandon.
 - Reglage du nombre de decks et de la mise de base.

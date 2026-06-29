@@ -62,6 +62,16 @@
           </div>
 
           <label class="field">
+            <span>Profil table</span>
+            <select id="ruleProfileSelect" aria-label="Profil de regles"></select>
+          </label>
+
+          <div class="profile-summary">
+            <strong id="ruleProfileSummary">Modifie les regles ci-dessous selon la table jouee.</strong>
+            <span id="ruleProfilePayout">Paiements a verifier sur la table avant de jouer.</span>
+          </div>
+
+          <label class="field">
             <span>Nombre de decks</span>
             <input id="deckCount" type="number" min="1" max="12" step="1" value="6">
           </label>
@@ -111,6 +121,10 @@
             <label class="check-field">
               <input id="splitAcesOneCard" type="checkbox" checked>
               <span>As split: une carte</span>
+            </label>
+            <label class="check-field">
+              <input id="resplitAllowed" type="checkbox" checked>
+              <span>Re-split autorise</span>
             </label>
           </div>
 
