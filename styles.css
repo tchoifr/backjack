@@ -680,6 +680,11 @@ h3 {
   gap: 8px;
 }
 
+.player-add-card-row {
+  grid-template-columns: minmax(90px, 1fr) auto;
+  margin-top: 10px;
+}
+
 .choice-row {
   display: flex;
   flex-wrap: wrap;

@@ -897,6 +897,7 @@ function applyRuleProfile(value) {
   const maxPlayers = getPlayerCountMax(profile);
   if (isCalculationOnlyMode(profile)) {
     setTablePlayerCount(1);
+    state.quickTarget = targetForPlayerHand(0, 0);
   } else if (state.table.playerCount > maxPlayers) {
     setTablePlayerCount(maxPlayers);
   }
@@ -905,7 +906,7 @@ function applyRuleProfile(value) {
     setTableStatus("Profil Regle en ligne applique: 8 decks, H17, assurance, 1 a 3 mains.");
   }
   if (isCalculationOnlyMode(profile)) {
-    setTableStatus("Profil Regle vrai blackjack applique: 8 decks, S17, 1 joueur, zone Autres joueurs, alerte assurance sur As.");
+    setTableStatus("Profil Regle vrai blackjack applique. La grille du bas remplit Joueur 1.");
   }
 
   saveState();
@@ -1692,7 +1693,8 @@ function addRankToPlayerHand(playerIndex, handIndex, rank, options = {}) {
     setTableStatus("Choisis la main et la carte a ajouter.");
     return false;
   }
-  if (hand.status !== "playing" && !hand.pendingAction) {
+  const canEditFinishedHand = Boolean(options.allowFinished) || (isCalculationOnlyMode() && playerIndex === 0);
+  if (hand.status !== "playing" && !hand.pendingAction && !canEditFinishedHand) {
     setTableStatus("Cette main est terminee. Supprime une carte ou vide la main avant d'en ajouter une.");
     return false;
   }
@@ -1718,6 +1720,7 @@ function addRankToPlayerHand(playerIndex, handIndex, rank, options = {}) {
   const info = getHandInfo(hand.cards);
   if (info.bust) hand.status = "bust";
   if (isNaturalBlackjackHand(hand)) hand.status = "blackjack";
+  if (!pendingAction && canEditFinishedHand) refreshHandStatusAfterCardEdit(hand);
 
   const nextSplitTarget = findNextSplitHandNeedingCard(playerIndex, handIndex);
   if (nextSplitTarget) state.quickTarget = nextSplitTarget;
@@ -1733,10 +1736,42 @@ function addRankToPlayerHand(playerIndex, handIndex, rank, options = {}) {
 }
 
 function removePlayerCard(playerIndex, handIndex, cardIndex) {
-  const [rank] = state.table.players[playerIndex].hands[handIndex].cards.splice(cardIndex, 1);
+  const hand = state.table.players[playerIndex].hands[handIndex];
+  const [rank] = hand.cards.splice(cardIndex, 1);
   removeCountedTableCard(rank);
+  refreshHandStatusAfterCardEdit(hand);
   saveState();
   renderApp();
+}
+
+function refreshHandStatusAfterCardEdit(hand) {
+  if (!hand.cards.length) {
+    hand.status = "playing";
+    hand.pendingAction = "";
+    return;
+  }
+
+  if (hand.pendingAction) return;
+
+  const info = getHandInfo(hand.cards);
+  if (state.rules.splitAcesOneCard && hand.splitAces && hand.cards.length >= 2) {
+    hand.status = "stand";
+    return;
+  }
+
+  if (info.bust) {
+    hand.status = "bust";
+    return;
+  }
+
+  if (isNaturalBlackjackHand(hand)) {
+    hand.status = "blackjack";
+    return;
+  }
+
+  if (["bust", "blackjack", "stand", "double", "surrender"].includes(hand.status)) {
+    hand.status = "playing";
+  }
 }
 
 function clearPlayerHand(playerIndex, handIndex) {
@@ -2104,8 +2139,9 @@ function renderPlayers() {
 
       const titleWrap = document.createElement("div");
       const label = document.createElement("span");
+      const playerLabel = calculationOnly && playerIndex === 0 ? `Joueur ${player.number} (toi)` : `Joueur ${player.number}`;
       label.textContent =
-        player.hands.length === 1 ? `Joueur ${player.number}` : `Joueur ${player.number} - main ${handIndex + 1}`;
+        player.hands.length === 1 ? playerLabel : `${playerLabel} - main ${handIndex + 1}`;
       titleWrap.append(label);
 
       const selectButton = document.createElement("button");
@@ -2146,6 +2182,30 @@ function renderPlayers() {
         showEmpty: false,
       });
 
+      const manualAddRow = document.createElement("div");
+      manualAddRow.className = "add-card-row player-add-card-row";
+      if (calculationOnly) {
+        const cardSelect = document.createElement("select");
+        fillRankSelect(cardSelect, `Carte ${playerLabel}`);
+
+        const addButton = document.createElement("button");
+        addButton.type = "button";
+        addButton.className = "button secondary";
+        addButton.textContent = "Ajouter";
+        addButton.addEventListener("click", () => {
+          if (
+            addRankToPlayerHand(playerIndex, handIndex, cardSelect.value, {
+              countIt: true,
+              allowFinished: true,
+            })
+          ) {
+            setTableStatus(`${cardSelect.value} ajoutee a ${getQuickTargetLabel(handTarget)} et au compteur.`);
+          }
+        });
+
+        manualAddRow.append(cardSelect, addButton);
+      }
+
       const choices = document.createElement("div");
       choices.className = "choice-row";
       if (showPlayerAdvice) {
@@ -2175,6 +2235,7 @@ function renderPlayers() {
         : recommendationInfo.reason;
 
       handCard.append(header, chips);
+      if (calculationOnly) handCard.appendChild(manualAddRow);
       if (showPlayerAdvice) handCard.appendChild(choices);
       if (hand.cards.length || hand.pendingAction || outcome) handCard.appendChild(note);
       elements.playersContainer.appendChild(handCard);
