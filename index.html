@@ -23,39 +23,44 @@
             <strong id="trueCount">0.0</strong>
           </div>
           <div class="metric">
-            <span>Cartes vues</span>
+            <span>Vues / penetration</span>
             <strong id="seenCount">0</strong>
           </div>
           <div class="metric">
             <span>Decks restants</span>
             <strong id="decksRemaining">6.0</strong>
           </div>
+          <div class="metric entry-metric">
+            <span>Entree table</span>
+            <strong id="entryScore">0%</strong>
+            <small id="entrySignal">Observer</small>
+          </div>
         </div>
       </header>
 
-      <section class="result-panel" id="resultPanel" aria-live="polite">
-        <div class="result-main">
-          <span>Resultat maintenant</span>
-          <strong id="resultTitle">Neutre - mise de base</strong>
-          <p id="resultAction">Mise 10. Continue a compter.</p>
-        </div>
-        <div class="result-grid">
-          <div>
-            <span>Action de mise</span>
-            <strong id="resultBet">Mise de base</strong>
+      <aside class="left-sidebar" aria-label="Conseil et reglages">
+        <section class="result-panel" id="resultPanel" aria-live="polite">
+          <div class="result-main">
+            <span>Resultat maintenant</span>
+            <strong id="resultTitle">Neutre - mise de base</strong>
+            <p id="resultAction">Mise 10. Continue a compter.</p>
           </div>
-          <div>
-            <span>Action de jeu</span>
-            <strong id="resultPlay">Strategie normale</strong>
+          <div class="result-grid">
+            <div>
+              <span>Mise</span>
+              <strong id="resultBet">Mise de base</strong>
+            </div>
+            <div>
+              <span>Confiance</span>
+              <strong id="resultPlay">Strategie normale</strong>
+            </div>
+            <div>
+              <span>Risque</span>
+              <strong id="resultReason">True count proche de 0</strong>
+            </div>
           </div>
-          <div>
-            <span>Pourquoi</span>
-            <strong id="resultReason">True count proche de 0</strong>
-          </div>
-        </div>
-      </section>
+        </section>
 
-      <section class="workspace" aria-label="Compteur blackjack">
         <aside class="panel settings-panel">
           <div class="panel-heading">
             <h2>Reglages</h2>
@@ -64,6 +69,11 @@
           <label class="field">
             <span>Profil table</span>
             <select id="ruleProfileSelect" aria-label="Profil de regles"></select>
+          </label>
+
+          <label class="field">
+            <span>Joueurs</span>
+            <input id="playerCount" type="number" min="1" max="7" step="1" value="1">
           </label>
 
           <div class="profile-summary">
@@ -143,8 +153,11 @@
             <button type="button" id="undoButton" class="button secondary" disabled>Annuler</button>
             <button type="button" id="resetButton" class="button danger">Nouveau sabot</button>
           </div>
+          <button type="button" id="clearTableButton" class="button secondary wide">Nouvelle manche</button>
         </aside>
+      </aside>
 
+      <section class="workspace" aria-label="Compteur blackjack">
         <section class="panel table-panel">
           <div class="panel-heading split">
             <div>
@@ -152,12 +165,7 @@
               <p>Entre la carte visible du croupier et les mains des joueurs pour obtenir les actions.</p>
             </div>
             <div class="table-actions">
-              <label class="field compact">
-                <span>Joueurs</span>
-                <input id="playerCount" type="number" min="1" max="7" step="1" value="1">
-              </label>
               <button type="button" id="countTableButton" class="button primary" disabled>Compter cartes visibles</button>
-              <button type="button" id="clearTableButton" class="button secondary">Nouvelle manche</button>
             </div>
           </div>
 
@@ -197,7 +205,10 @@
                   <span>Croupier</span>
                   <strong id="dealerSummary">Aucune carte</strong>
                 </div>
-                <button type="button" id="selectDealerButton" class="button secondary mini select-hand-button">Selectionner</button>
+                <div class="hand-controls">
+                  <button type="button" id="selectDealerButton" class="button secondary mini select-hand-button">Selectionner</button>
+                  <button type="button" id="clearDealerButton" class="button secondary mini">Vider</button>
+                </div>
                 <div class="recommendation" id="dealerRecommendation">
                   <span>Regle croupier</span>
                   <strong>Entrer cartes</strong>
@@ -207,7 +218,6 @@
               <div class="add-card-row">
                 <select id="dealerCardSelect" aria-label="Ajouter une carte au croupier"></select>
                 <button type="button" id="addDealerCardButton" class="button secondary">Ajouter</button>
-                <button type="button" id="clearDealerButton" class="button secondary">Vider</button>
               </div>
             </section>
 
@@ -217,7 +227,10 @@
                   <span>Autres joueurs</span>
                   <strong id="otherPlayersSummary">Aucune carte</strong>
                 </div>
-                <button type="button" id="selectOtherPlayersButton" class="button secondary mini select-hand-button">Selectionner</button>
+                <div class="hand-controls">
+                  <button type="button" id="selectOtherPlayersButton" class="button secondary mini select-hand-button">Selectionner</button>
+                  <button type="button" id="clearOtherPlayersButton" class="button secondary mini">Vider</button>
+                </div>
                 <div class="recommendation">
                   <span>Calcul</span>
                   <strong>Cartes visibles</strong>
@@ -227,7 +240,6 @@
               <div class="add-card-row">
                 <select id="otherPlayersCardSelect" aria-label="Ajouter une carte des autres joueurs"></select>
                 <button type="button" id="addOtherPlayersCardButton" class="button secondary">Ajouter</button>
-                <button type="button" id="clearOtherPlayersButton" class="button secondary">Vider</button>
               </div>
             </section>
 

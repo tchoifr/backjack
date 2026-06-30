@@ -114,6 +114,8 @@ const elements = {
   trueCount: document.querySelector("#trueCount"),
   seenCount: document.querySelector("#seenCount"),
   decksRemaining: document.querySelector("#decksRemaining"),
+  entryScore: document.querySelector("#entryScore"),
+  entrySignal: document.querySelector("#entrySignal"),
   resultPanel: document.querySelector("#resultPanel"),
   resultTitle: document.querySelector("#resultTitle"),
   resultAction: document.querySelector("#resultAction"),
@@ -491,12 +493,16 @@ function getCountStats() {
   const displayDecksRemaining = remainingCards / 52;
   const calculationDecksRemaining = Math.max(displayDecksRemaining, 0.25);
   const trueCount = running / calculationDecksRemaining;
+  const penetration = totalCards ? clamp(seen / totalCards, 0, 1) : 0;
 
   return {
     running,
     seen,
+    totalCards,
+    remainingCards,
     displayDecksRemaining,
     trueCount,
+    penetration,
   };
 }
 
@@ -662,46 +668,53 @@ function renderEdgeStatus(stats) {
   const label = elements.edgeStatus.querySelector("span");
   const title = elements.edgeStatus.querySelector("strong");
   const detail = elements.edgeStatus.querySelector("small");
+  const penetration = getPenetrationInfo(stats);
+  const penetrationText = `Penetration ${formatPercent(stats.penetration)} - confiance ${penetration.label}.`;
 
   if (isCalculationOnlyMode()) {
     label.textContent = "Mode";
     title.textContent = "Calcul seul";
     detail.textContent = stats.seen
-      ? `${stats.seen} carte(s) comptee(s). Alerte assurance seulement si le croupier montre un As.`
+      ? `${stats.seen} carte(s) comptee(s). ${penetrationText} Alerte assurance seulement si le croupier montre un As.`
       : "Entre les cartes vues pour calculer le count.";
     return;
   }
 
-  label.textContent = "Avantage";
+  label.textContent = "Avantage / entree";
 
   if (stats.trueCount >= 4) {
     elements.edgeStatus.classList.add("hot");
     title.textContent = "Tres favorable";
-    detail.textContent = "Le sabot est riche en cartes fortes.";
+    detail.textContent = `Le sabot est riche en cartes fortes. ${penetrationText}`;
     return;
   }
 
   if (stats.trueCount >= 2) {
     elements.edgeStatus.classList.add("positive");
     title.textContent = "Favorable";
-    detail.textContent = "Plus de 10, figures et As restent dans le sabot.";
+    detail.textContent = `Plus de 10, figures et As restent dans le sabot. ${penetrationText}`;
     return;
   }
 
   if (stats.trueCount <= -1) {
     elements.edgeStatus.classList.add("negative");
     title.textContent = "Defavorable";
-    detail.textContent = "Le sabot manque de cartes fortes.";
+    detail.textContent = `Le sabot manque de cartes fortes. ${penetrationText}`;
     return;
   }
 
   title.textContent = "Neutre";
-  detail.textContent = stats.seen ? "Pas d'avantage net pour le moment." : "Le sabot vient de commencer.";
+  detail.textContent = stats.seen
+    ? `Pas d'avantage net pour le moment. ${penetrationText}`
+    : "Le sabot vient de commencer.";
 }
 
 function getBetUnits(stats) {
   if (stats.trueCount < 1) return 1;
-  return Math.min(8, Math.max(1, Math.floor(stats.trueCount)));
+  if (stats.trueCount < 2) return 2;
+  if (stats.trueCount < 3) return 4;
+  if (stats.trueCount < 4) return 6;
+  return 8;
 }
 
 function getBetAmount(stats) {
@@ -709,60 +722,186 @@ function getBetAmount(stats) {
   return baseBet * getBetUnits(stats);
 }
 
-function getActionRecommendation(stats) {
-  const betAmount = getBetAmount(stats);
+function formatBetUnits(units) {
+  return `${units} unite${units > 1 ? "s" : ""}`;
+}
 
-  if (!stats.seen) {
-    return {
-      tone: "neutral",
-      title: "Debut du sabot - mise de base",
-      action: `Mise ${betAmount}. Commence a entrer les cartes vues.`,
-      bet: "Mise de base",
-      play: "Strategie normale",
-      reason: "Aucune carte vue",
-    };
-  }
+function formatPercent(value) {
+  return `${Math.round(value * 100)}%`;
+}
 
-  if (stats.trueCount >= 4) {
+function getPenetrationInfo(stats) {
+  const penetration = stats.penetration || 0;
+
+  if (penetration >= 0.7) {
     return {
+      label: "tres forte",
+      detail: "70%+ du sabot vu: true count tres exploitable.",
       tone: "hot",
-      title: "Tres favorable - augmenter fort",
-      action: `Mise ${betAmount}. Le sabot contient beaucoup de cartes fortes.`,
-      bet: "Augmenter fort",
-      play: "Strategie normale",
-      reason: `True count ${stats.trueCount.toFixed(1)}`,
     };
   }
 
-  if (stats.trueCount >= 2) {
+  if (penetration >= 0.5) {
     return {
+      label: "forte",
+      detail: "50%+ du sabot vu: true count fiable.",
       tone: "positive",
-      title: "Favorable - augmenter",
-      action: `Mise ${betAmount}. Situation meilleure pour le joueur.`,
-      bet: "Augmenter",
-      play: "Strategie normale",
-      reason: `True count ${stats.trueCount.toFixed(1)}`,
     };
   }
 
-  if (stats.trueCount <= -1) {
+  if (penetration >= 0.25) {
     return {
-      tone: "negative",
-      title: "Defavorable - rester minimum",
-      action: `Mise ${betAmount}. N'augmente pas la mise.`,
-      bet: "Minimum",
-      play: "Strategie normale",
-      reason: `True count ${stats.trueCount.toFixed(1)}`,
+      label: "moyenne",
+      detail: "25-50% du sabot vu: conseil utilisable, variance encore presente.",
+      tone: "neutral",
     };
   }
 
   return {
-    tone: "neutral",
-    title: "Neutre - mise de base",
-    action: `Mise ${betAmount}. Continue a compter.`,
-    bet: "Mise de base",
-    play: "Strategie normale",
-    reason: `True count ${stats.trueCount.toFixed(1)}`,
+    label: "faible",
+    detail: "Moins de 25% du sabot vu: true count encore fragile.",
+    tone: "negative",
+  };
+}
+
+function getTableEntryAdvice(stats) {
+  const trueCount = stats.trueCount;
+
+  if (!stats.seen) {
+    return {
+      tone: "neutral",
+      title: "Observer",
+      action: "Attendre le count",
+      detail: "Debut de sabot: entrer les cartes avant de monter la mise.",
+    };
+  }
+
+  if (trueCount < 0) {
+    return {
+      tone: "negative",
+      title: "Quitter / pause",
+      action: "Pause table",
+      detail: "TC negatif: eviter d'investir, revenir plus tard.",
+    };
+  }
+
+  if (trueCount < 1) {
+    return {
+      tone: "neutral",
+      title: "Ne pas entrer",
+      action: "Minimum",
+      detail: "TC sous +1: jouer minimum ou attendre.",
+    };
+  }
+
+  if (trueCount < 3) {
+    return {
+      tone: "positive",
+      title: "Entrer doucement",
+      action: "Monter prudemment",
+      detail: "TC +1 a +2: avantage leger, progression controlee.",
+    };
+  }
+
+  return {
+    tone: "hot",
+    title: "Bon moment",
+    action: "Entrer / agresser",
+    detail: "TC +3 ou plus: le sabot justifie une mise forte.",
+  };
+}
+
+function getEntryOpportunity(stats) {
+  if (!stats.seen) {
+    return {
+      score: 0,
+      label: "Observer",
+      tone: "neutral",
+    };
+  }
+
+  const trueCount = stats.trueCount;
+  let score = 0;
+
+  if (trueCount < 0) score = 0;
+  else if (trueCount < 1) score = 20;
+  else if (trueCount < 2) score = 45;
+  else if (trueCount < 3) score = 70;
+  else if (trueCount < 4) score = 88;
+  else score = 100;
+
+  const penetration = stats.penetration || 0;
+  const cap = penetration < 0.05 ? 30 : penetration < 0.25 ? 55 : penetration < 0.5 ? 80 : 100;
+  const cappedScore = Math.min(score, cap);
+
+  if (cappedScore >= 85) {
+    return {
+      score: cappedScore,
+      label: "Meilleur moment",
+      tone: "hot",
+    };
+  }
+
+  if (cappedScore >= 70) {
+    return {
+      score: cappedScore,
+      label: "Entrer",
+      tone: "positive",
+    };
+  }
+
+  if (cappedScore >= 45) {
+    return {
+      score: cappedScore,
+      label: "Possible",
+      tone: "positive",
+    };
+  }
+
+  if (cappedScore >= 20) {
+    return {
+      score: cappedScore,
+      label: "Attendre",
+      tone: "neutral",
+    };
+  }
+
+  return {
+    score: cappedScore,
+    label: "Ne pas entrer",
+    tone: "negative",
+  };
+}
+
+function getSideBetWarning() {
+  return "Side bets hors assurance TC +3: a eviter, garde l'avantage sur le blackjack principal.";
+}
+
+function getActionRecommendation(stats) {
+  const betAmount = getBetAmount(stats);
+  const betUnits = getBetUnits(stats);
+  const tableEntry = getTableEntryAdvice(stats);
+  const penetration = getPenetrationInfo(stats);
+  const trueCountText = formatTrueCount(stats.trueCount);
+
+  if (!stats.seen) {
+    return {
+      tone: "neutral",
+      title: "TABLE : OBSERVER",
+      action: `Mise ${betAmount} (${betUnits} unite). Commence a entrer les cartes vues.`,
+      bet: `${formatBetUnits(betUnits)} - ${betAmount}`,
+      play: `Confiance ${penetration.label}`,
+      reason: `${tableEntry.detail} ${getSideBetWarning()}`,
+    };
+  }
+
+  return {
+    tone: tableEntry.tone,
+    title: `TABLE : ${tableEntry.title.toUpperCase()}`,
+    action: `TC ${trueCountText}. Mise ${betAmount} (${formatBetUnits(betUnits)}). ${tableEntry.detail}`,
+    bet: `${formatBetUnits(betUnits)} - ${betAmount}`,
+    play: `Confiance ${penetration.label}`,
+    reason: `${penetration.detail} ${getSideBetWarning()}`,
   };
 }
 
@@ -917,42 +1056,61 @@ function renderActionRecommendation(stats) {
   if (isCalculationOnlyMode()) {
     const primaryHand = getPrimaryPlayerHand();
     const aceDecision = getDealerAceInsuranceDecision(primaryHand, stats);
-    const playAdvice = primaryHand ? getRuleAdjustedRecommendation(primaryHand) : null;
+    const playAdvice = primaryHand ? getProAdvice(primaryHand, stats) : null;
+    const showSeparateInsurance = aceDecision && playAdvice?.code !== "insurance";
     const hasPlayerCards = Boolean(primaryHand?.cards.length);
 
-    elements.resultPanel.className = "result-panel";
+    elements.resultPanel.className = `result-panel ${playAdvice?.tone || ""}`.trim();
     elements.resultTitle.textContent = hasPlayerCards && playAdvice
-      ? `Joueur 1 - ${playAdvice.action}`
+      ? `ACTION : ${playAdvice.action.toUpperCase()}`
       : aceDecision
       ? `Croupier As - ${aceDecision.action}`
       : "Mode calcul seul";
     elements.resultAction.textContent = hasPlayerCards && playAdvice
-      ? `${playAdvice.reason}${aceDecision ? ` Assurance: ${aceDecision.action}. ${aceDecision.reason}` : ""}`
+      ? `${playAdvice.reason}${playAdvice.pro ? ` Base: ${playAdvice.baseAction}.` : ""}${
+          showSeparateInsurance ? ` Assurance: ${aceDecision.action}. ${aceDecision.reason}` : ""
+        }`
       : aceDecision
       ? aceDecision.reason
       : stats.seen
       ? `Running count ${signed(stats.running)}. True count ${formatTrueCount(stats.trueCount)}.`
       : "Entre les cartes visibles pour demarrer le calcul.";
-    elements.resultBet.textContent = "Non affichee";
-    elements.resultPlay.textContent = hasPlayerCards && playAdvice ? playAdvice.action : aceDecision ? aceDecision.action : "Non affiche";
-    elements.resultReason.textContent = "Profil Regle vrai blackjack";
+    elements.resultBet.textContent = hasPlayerCards && playAdvice
+      ? `MISE : ${formatBetUnits(playAdvice.betUnits)} - ${playAdvice.betAmount}`
+      : "MISE : non affichee";
+    elements.resultPlay.textContent = hasPlayerCards && playAdvice
+      ? `CONFIANCE : ${playAdvice.confidence}`
+      : aceDecision
+      ? `CONFIANCE : ${getPenetrationInfo(stats).label}`
+      : "CONFIANCE : non affichee";
+    elements.resultReason.textContent = hasPlayerCards && playAdvice
+      ? `RISQUE : ${playAdvice.risk}`
+      : "Profil Regle vrai blackjack";
     return;
   }
 
   const recommendation = getActionRecommendation(stats);
   const activeHand = findActiveHand();
-  const activeRecommendation = activeHand ? getRuleAdjustedRecommendation(activeHand.hand) : null;
+  const activeRecommendation = activeHand ? getProAdvice(activeHand.hand, stats) : null;
 
-  elements.resultPanel.className = `result-panel ${recommendation.tone}`;
-  elements.resultTitle.textContent = recommendation.title;
+  elements.resultPanel.className = `result-panel ${activeRecommendation?.tone || recommendation.tone}`;
+  elements.resultTitle.textContent = activeHand
+    ? `ACTION : ${activeRecommendation.action.toUpperCase()}`
+    : recommendation.title;
   elements.resultAction.textContent = activeHand
-    ? `${recommendation.action} Action: ${activeRecommendation.action} pour Joueur ${activeHand.player.number}, main ${activeHand.handIndex + 1}.`
+    ? `Joueur ${activeHand.player.number}, main ${activeHand.handIndex + 1}. ${activeRecommendation.reason}${
+        activeRecommendation.pro ? ` Base: ${activeRecommendation.baseAction}.` : ""
+      }`
     : recommendation.action;
-  elements.resultBet.textContent = recommendation.bet;
+  elements.resultBet.textContent = activeHand
+    ? `MISE : ${formatBetUnits(activeRecommendation.betUnits)} - ${activeRecommendation.betAmount}`
+    : recommendation.bet;
   elements.resultPlay.textContent = activeHand
-    ? `Joueur ${activeHand.player.number}: ${activeRecommendation.action}`
+    ? `CONFIANCE : ${activeRecommendation.confidence}`
     : recommendation.play;
-  elements.resultReason.textContent = activeRecommendation ? activeRecommendation.reason : recommendation.reason;
+  elements.resultReason.textContent = activeRecommendation
+    ? `RISQUE : ${activeRecommendation.risk}`
+    : recommendation.reason;
 }
 
 function cardValue(rank) {
@@ -1115,6 +1273,148 @@ function getRuleAdjustedRecommendation(hand) {
   }
 
   return base;
+}
+
+function getProAdvice(hand, stats) {
+  const baseAdvice = getRuleAdjustedRecommendation(hand);
+  const insuranceAdvice = getInsuranceProAdvice(hand, stats);
+  const countDeviation = insuranceAdvice || getCountDeviation(hand, stats, baseAdvice);
+  const advice = countDeviation || baseAdvice;
+  const countDriven = Boolean(countDeviation);
+  const betUnits = getBetUnits(stats);
+
+  return {
+    ...advice,
+    pro: countDriven,
+    baseAction: baseAdvice.action,
+    source: countDeviation ? countDeviation.source || "Deviation Hi-Lo" : "Strategie de base",
+    confidence: getAdviceConfidence(hand, advice, stats, countDriven),
+    confidenceDetail: getAdviceConfidenceDetail(advice, stats, countDriven),
+    risk: getAdviceRisk(hand, advice, stats),
+    betUnits,
+    betAmount: getBetAmount(stats),
+    tableEntry: getTableEntryAdvice(stats),
+  };
+}
+
+function getAdviceConfidence(hand, advice, stats, countDriven) {
+  if (!advice || advice.code === "setup") return "attente";
+  if (countDriven) return getPenetrationInfo(stats).label;
+  if (advice.code === "done") return "forte";
+
+  const info = hand ? getHandInfo(hand.cards) : null;
+  if (info?.blackjack || info?.bust) return "forte";
+  return "forte";
+}
+
+function getAdviceConfidenceDetail(advice, stats, countDriven) {
+  if (countDriven) {
+    const penetration = getPenetrationInfo(stats);
+    return `${formatPercent(stats.penetration)} - ${penetration.detail}`;
+  }
+
+  if (advice?.code === "setup") return "Decision en attente des cartes manquantes.";
+  return "Decision fondee sur la main et la strategie de base.";
+}
+
+function getInsuranceProAdvice(hand, stats) {
+  if (!hand || state.table.dealerCards[0] !== "A" || !getAllowedActions(hand).includes("insurance")) return null;
+  if (stats.trueCount < INSURANCE_TRUE_COUNT_INDEX) return null;
+
+  return {
+    ...recommendation(
+      "hot",
+      "Prendre assurance",
+      `Assurance rentable: croupier As, TC ${formatTrueCount(stats.trueCount)} >= +${INSURANCE_TRUE_COUNT_INDEX}.`,
+      "insurance"
+    ),
+    source: "Assurance Hi-Lo",
+  };
+}
+
+function getCountDeviation(hand, stats, baseAdvice) {
+  if (!hand || !stats || !baseAdvice || ["setup", "done"].includes(baseAdvice.code)) return null;
+
+  const info = getHandInfo(hand.cards);
+  const dealer = getDealerUpValue();
+  const allowed = getAllowedActions(hand);
+
+  if (!dealer || info.soft || info.blackjack || info.bust || !allowed.length) return null;
+  if (info.pair && baseAdvice.code === "split") return null;
+
+  const trueCount = stats.trueCount;
+  const dealerLabel = getDealerUpLabel(dealer);
+  const handLabel = `${info.total} dur`;
+
+  if (info.total === 16 && dealer === 10) {
+    const action = trueCount >= 0
+      ? recommendation(
+          "positive",
+          "Rester",
+          `${handLabel} contre ${dealerLabel}, TC ${formatTrueCount(trueCount)}: rester selon l'index Hi-Lo 0.`,
+          "stand"
+        )
+      : recommendation(
+          "neutral",
+          "Tirer",
+          `${handLabel} contre ${dealerLabel}, TC ${formatTrueCount(trueCount)} sous 0: tirer selon l'index Hi-Lo.`,
+          "hit"
+        );
+    return allowed.includes(action.code) ? { ...action, source: "Deviation Hi-Lo" } : null;
+  }
+
+  if (info.total === 15 && dealer === 10 && trueCount >= 4) {
+    const action = recommendation(
+      "positive",
+      "Rester",
+      `${handLabel} contre ${dealerLabel}, TC ${formatTrueCount(trueCount)} >= +4: rester au lieu de tirer.`,
+      "stand"
+    );
+    return allowed.includes(action.code) ? { ...action, source: "Deviation Hi-Lo" } : null;
+  }
+
+  if (info.total === 10 && dealer === 11 && trueCount >= 4) {
+    const action = recommendation(
+      "hot",
+      "Doubler",
+      `${handLabel} contre As, TC ${formatTrueCount(trueCount)} >= +4: doubler devient rentable.`,
+      "double"
+    );
+    return allowed.includes(action.code) ? { ...action, source: "Deviation Hi-Lo" } : null;
+  }
+
+  if (info.total === 12 && dealer === 3 && trueCount >= 2) {
+    const action = recommendation(
+      "positive",
+      "Rester",
+      `${handLabel} contre ${dealerLabel}, TC ${formatTrueCount(trueCount)} >= +2: rester au lieu de tirer.`,
+      "stand"
+    );
+    return allowed.includes(action.code) ? { ...action, source: "Deviation Hi-Lo" } : null;
+  }
+
+  return null;
+}
+
+function getDealerUpLabel(value) {
+  if (value === 11) return "As";
+  if (value === 10) return "10";
+  return `${value}`;
+}
+
+function getAdviceRisk(hand, advice, stats) {
+  if (!hand || !advice || ["setup", "done"].includes(advice.code)) return "controle";
+
+  const info = getHandInfo(hand.cards);
+  const dealer = getDealerUpValue();
+
+  if (advice.code === "insurance") return "conditionnel";
+  if (advice.code === "surrender") return "limite";
+  if (advice.code === "double") return stats.trueCount >= 3 ? "moyen" : "eleve";
+  if (!info.soft && info.total >= 12 && info.total <= 16 && dealer >= 7) return "eleve";
+  if (!info.soft && info.total <= 11) return "faible";
+  if (info.soft) return "modere";
+  return "moyen";
 }
 
 function recommendation(tone, action, reason, code) {
@@ -1605,7 +1905,9 @@ function addDealerCard() {
     return false;
   }
 
-  return addRankToDealer(rank);
+  const added = addRankToDealer(rank, { countIt: true });
+  if (added) setTableStatus(`${rank} ajoutee au croupier et au compteur.`);
+  return added;
 }
 
 function addRankToDealer(rank, options = {}) {
@@ -1652,7 +1954,9 @@ function addOtherPlayersCard() {
     return false;
   }
 
-  return addRankToOtherPlayers(rank);
+  const added = addRankToOtherPlayers(rank, { countIt: true });
+  if (added) setTableStatus(`${rank} ajoutee aux autres joueurs et au compteur.`);
+  return added;
 }
 
 function addRankToOtherPlayers(rank, options = {}) {
@@ -1857,7 +2161,7 @@ function renderTable() {
   const calculationOnly = isCalculationOnlyMode();
   elements.playerCount.max = `${getPlayerCountMax()}`;
   elements.playerCount.value = `${state.table.playerCount}`;
-  elements.playerCount.disabled = calculationOnly;
+  elements.playerCount.disabled = false;
   elements.dealerSummary.textContent = formatHandSummary(state.table.dealerCards);
   const dealerDecision = getDealerDecision();
   elements.dealerRecommendation.className = calculationOnly ? "recommendation" : `recommendation ${dealerDecision.tone}`;
@@ -2133,7 +2437,7 @@ function renderPlayers() {
       const handCard = document.createElement("article");
       handCard.className = `hand-card player-hand ${handSelected ? "selected-hand" : ""}`.trim();
 
-      const recommendationInfo = getRuleAdjustedRecommendation(hand);
+      const recommendationInfo = getProAdvice(hand, stats);
       const header = document.createElement("div");
       header.className = "hand-header";
 
@@ -2162,10 +2466,15 @@ function renderPlayers() {
       handControls.append(selectButton, clearButton);
 
       const aceDecision = getDealerAceInsuranceDecision(hand, stats);
+      const showSeparateInsurance = aceDecision && recommendationInfo.code !== "insurance";
       const recommendationBox = document.createElement("div");
       recommendationBox.className = showPlayerAdvice ? `recommendation ${recommendationInfo.tone}` : "recommendation";
       const recommendationLabel = document.createElement("span");
-      recommendationLabel.textContent = showPlayerAdvice ? "Conseil" : "Calcul";
+      recommendationLabel.textContent = showPlayerAdvice
+        ? recommendationInfo.pro
+          ? "Conseil pro"
+          : "Conseil"
+        : "Calcul";
       const recommendationAction = document.createElement("strong");
       recommendationAction.textContent = showPlayerAdvice
         ? recommendationInfo.action
@@ -2224,8 +2533,18 @@ function renderPlayers() {
       const note = document.createElement("p");
       note.className = "action-note";
       const outcome = getHandOutcome(hand);
+      const proDetail = recommendationInfo.pro && recommendationInfo.baseAction !== recommendationInfo.action
+        ? ` Base: ${recommendationInfo.baseAction}.`
+        : "";
+      const liveDetail = showPlayerAdvice
+        ? ` Confiance: ${recommendationInfo.confidence}. Risque: ${recommendationInfo.risk}. Mise: ${formatBetUnits(
+            recommendationInfo.betUnits
+          )}.`
+        : "";
       note.textContent = showPlayerAdvice
-        ? `${recommendationInfo.reason}${aceDecision ? ` Assurance: ${aceDecision.action}. ${aceDecision.reason}` : ""}${
+        ? `${recommendationInfo.reason}${proDetail}${liveDetail}${
+            showSeparateInsurance ? ` Assurance: ${aceDecision.action}. ${aceDecision.reason}` : ""
+          }${
             outcome ? ` Resultat: ${outcome}` : ""
           }`
         : calculationOnly
@@ -2255,8 +2574,12 @@ function renderApp() {
   document.body.classList.toggle("calculation-only-mode", isCalculationOnlyMode());
   elements.runningCount.textContent = signed(stats.running);
   elements.trueCount.textContent = stats.trueCount.toFixed(1);
-  elements.seenCount.textContent = `${stats.seen}`;
+  elements.seenCount.textContent = `${stats.seen} / ${formatPercent(stats.penetration)}`;
   elements.decksRemaining.textContent = stats.displayDecksRemaining.toFixed(1);
+  const entryOpportunity = getEntryOpportunity(stats);
+  elements.entryScore.textContent = `${entryOpportunity.score}%`;
+  elements.entrySignal.textContent = entryOpportunity.label;
+  elements.entryScore.closest(".metric").className = `metric entry-metric ${entryOpportunity.tone}`;
   elements.deckCount.value = `${state.deckCount}`;
   elements.baseBet.value = `${state.baseBet}`;
   elements.undoButton.disabled = state.history.length === 0;
